@@ -15,7 +15,8 @@ const logger = pino({
         target: "pino-pretty",
         options: {
           colorize: true,
-          translateTime: "SYS:standard",
+          // Show compact time like [19:23:04]
+          translateTime: "SYS:HH:MM:ss",
           singleLine: false,
           ignore: "pid,hostname",
         },
