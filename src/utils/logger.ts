@@ -1,4 +1,7 @@
+import { config as configDotenv } from "dotenv";
 import pino from "pino";
+
+configDotenv({ path: ".env" });
 
 const level = (process.env.LOG_LEVEL ?? "info") as pino.LevelWithSilent;
 const isPretty = process.env.NODE_ENV !== "production" || process.env.PRETTY_LOGS === "true";

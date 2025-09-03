@@ -1,3 +1,4 @@
+import { config as configDotenv } from "dotenv";
 import logger from "../utils/logger.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { triggerTwilioOrRemove } from "../utils/twilio.js";
@@ -5,6 +6,8 @@ import { isRegularJBGroup, isMJBGroup, isNonJBGroup, isAJBGroup, isMBMulheresGro
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
 import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
+
+configDotenv({ path: ".env" });
 
 const dontRemove = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
 const exceptions = (process.env.EXCEPTIONS ?? "").split(",").filter(Boolean);

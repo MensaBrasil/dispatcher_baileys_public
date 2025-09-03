@@ -1,3 +1,4 @@
+import { config as configDotenv } from "dotenv";
 import logger from "../utils/logger.js";
 import {
   getPreviousGroupMembers,
@@ -11,6 +12,8 @@ import { delaySecs } from "../utils/delay.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
 import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
+
+configDotenv({ path: ".env" });
 
 const ignoreNumbers = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
 const scanDelay = Number.parseInt(process.env.SCAN_DELAY ?? "1", 10) || 0;

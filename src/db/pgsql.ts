@@ -1,7 +1,10 @@
+import { config as configDotenv } from "dotenv";
 import { Pool } from "pg";
 import logger from "../utils/logger.js";
 import type { DBGroupRequest } from "../types/DBTypes.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
+
+configDotenv({ path: ".env" });
 
 // Shared connection pool
 let pool: Pool | undefined;

@@ -1,6 +1,9 @@
+import { config as configDotenv } from "dotenv";
 import { createClient, type RedisClientType } from "redis";
 import logger from "../utils/logger.js";
 import type { JsonValue, QueueName, RedisModule } from "../types/RedisTypes.js";
+
+configDotenv({ path: ".env" });
 
 // Single shared client instance and connection state
 let client: RedisClientType | undefined;
