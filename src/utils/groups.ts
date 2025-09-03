@@ -1,4 +1,4 @@
-import type { WASocket } from "baileys";
+import type { WASocket, GroupMetadata } from "baileys";
 
 type BaileysParticipant = { id: string; admin?: "admin" | "superadmin" | null } | { id: string } | string;
 
@@ -8,6 +8,9 @@ export type MinimalGroup = {
   name?: string;
   participants: BaileysParticipant[];
   announceGroup?: string | null;
+  addressingMode?: "pn" | "lid" | string | null;
+  isCommunity?: boolean;
+  isCommunityAnnounce?: boolean;
 };
 
 function isAdminForMe(participants: BaileysParticipant[], meJid: string): boolean {
@@ -35,6 +38,8 @@ export async function processGroupsBaileys(
 ): Promise<{
   groups: MinimalGroup[];
   adminGroups: MinimalGroup[];
+  community: MinimalGroup[];
+  communityAnnounce: MinimalGroup[];
 }> {
   const all = await sock.groupFetchAllParticipating();
   const allGroups = Object.values(all);
@@ -44,28 +49,40 @@ export async function processGroupsBaileys(
     throw new Error("Socket user JID not available");
   }
 
-  const normalized: MinimalGroup[] = allGroups.map((g) => ({
+  const normalized: MinimalGroup[] = allGroups.map((g: GroupMetadata) => ({
     id: g.id,
     subject: g.subject,
     name: g.subject,
     participants: g.participants as unknown as BaileysParticipant[],
     announceGroup: null,
+    addressingMode: g.addressingMode ?? null,
+    isCommunity: Boolean(g.isCommunity),
+    isCommunityAnnounce: Boolean(g.isCommunityAnnounce),
   }));
 
   const adminGroups: MinimalGroup[] = [];
+  const community: MinimalGroup[] = [];
+  const communityAnnounce: MinimalGroup[] = [];
+  const groups: MinimalGroup[] = [];
 
   for (const group of normalized) {
     if (delayMs > 0) {
       const wait = Math.floor(Math.random() * delayMs);
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
-    if (isAdminForMe(group.participants, meJid)) {
-      adminGroups.push(group);
-    }
+    const isAdmin = isAdminForMe(group.participants, meJid);
+    const isComm = Boolean(group.isCommunity);
+    const isCommAnn = Boolean(group.isCommunityAnnounce);
+    // Include non-community announce groups into regular groups as requested
+    if (isComm) community.push(group);
+    else if (isCommAnn) communityAnnounce.push(group);
+    else groups.push(group);
+
+    if (!isComm && !isCommAnn && isAdmin) adminGroups.push(group);
   }
 
-  // For now, process only admin groups to ensure real numbers (not LIDs)
-  return { groups: adminGroups, adminGroups };
+  // Return full classification
+  return { groups, adminGroups, community, communityAnnounce };
 }
 
 export default { processGroupsBaileys };

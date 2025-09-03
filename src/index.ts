@@ -57,12 +57,12 @@ async function main() {
 
   async function runCycleOnce() {
     try {
-      // Fetch and classify groups using Baileys, ensuring admin-only groups
-      const { groups } = await processGroupsBaileys(sock);
+      // Fetch and classify groups using Baileys
+      const { adminGroups } = await processGroupsBaileys(sock);
 
       // 1) Add task (id + name/subject)
       if (runAdd) {
-        const addTaskGroups = groups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
+        const addTaskGroups = adminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
         await addMembersToGroups(addTaskGroups);
       }
 
@@ -78,7 +78,7 @@ async function main() {
 
       // 3) Remove task
       if (runRemove && phoneMap) {
-        await removeMembersFromGroups(groups, phoneMap);
+        await removeMembersFromGroups(adminGroups, phoneMap);
       }
 
       if (runRemove && (runScan || false)) {
@@ -87,7 +87,7 @@ async function main() {
 
       // 4) Scan task
       if (runScan && phoneMap) {
-        await scanGroups(groups, phoneMap);
+        await scanGroups(adminGroups, phoneMap);
       }
     } catch (err) {
       logger.error({ err }, "Error running tasks in cycle");

@@ -1,4 +1,9 @@
-export type MinimalParticipant = { id?: { user?: string } } | { user?: string } | { id: string } | string;
+export type MinimalParticipant =
+  | { id?: { user?: string } }
+  | { user?: string }
+  | { id: string }
+  | { id: string; jid?: string; lid?: string }
+  | string;
 
 function onlyDigits(s: string | undefined | null): string | null {
   if (!s) return null;
@@ -22,7 +27,13 @@ export function extractPhoneFromParticipant(p: MinimalParticipant): string | nul
     if ("id" in p) {
       const val = (p as { id?: unknown }).id;
       if (typeof val === "string") {
-        return extractFromJid(val);
+        const res = extractFromJid(val);
+        if (res) return res;
+        // If id is a LID (e.g. ...@lid), try fallback to 'jid' field when present
+        const maybeJid = (p as { jid?: unknown }).jid;
+        if (typeof maybeJid === "string") {
+          return extractFromJid(maybeJid);
+        }
       }
       if (val && typeof val === "object" && "user" in (val as { user?: unknown })) {
         return onlyDigits(String((val as { user?: unknown }).user ?? ""));
