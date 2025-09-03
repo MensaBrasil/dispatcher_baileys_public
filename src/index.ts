@@ -13,7 +13,7 @@ import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
 import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
 import { checkPhoneNumber } from "./utils/phoneCheck.js";
-import { checkGroupType } from "./utils/checkGroupType.js";
+import { checkGroupType, isOrgMBGroup } from "./utils/checkGroupType.js";
 
 configDotenv({ path: ".env" });
 
@@ -88,9 +88,11 @@ async function main() {
         const t = await checkGroupType(name);
         if (t) mensaAdminGroups.push(g);
       }
-      // Update DB with current groups list
+      // Update DB with current groups list (exclude OrgMB groups)
       try {
-        const toSave = mensaAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
+        const toSave = mensaAdminGroups
+          .filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""))
+          .map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
         await saveGroupsToList(toSave);
       } catch (err) {
         logger.warn({ err }, "Failed to save groups list to DB");
