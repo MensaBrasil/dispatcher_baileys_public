@@ -102,7 +102,8 @@ async function main(): Promise<void> {
         const withoutCommunity = values.filter(
           (g) => !g.isCommunity && !g.isCommunityAnnounce && !g.linkedParent,
         ).length;
-        const adminCount = values.filter((g) => isAdmin(g)).length;
+        // Admin groups count should exclude community & community announce groups
+        const adminCount = values.filter((g) => !g.isCommunity && !g.isCommunityAnnounce && isAdmin(g)).length;
 
         // Classification by group name for non-community groups
         const regularGroups = values.filter((g) => !g.isCommunity && !g.isCommunityAnnounce);

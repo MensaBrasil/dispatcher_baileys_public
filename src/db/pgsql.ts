@@ -190,4 +190,27 @@ export async function closePool(): Promise<void> {
   }
 }
 
+export async function saveGroupsToList(groups: Array<{ group_id: string; group_name: string }>): Promise<void> {
+  const p = getPool();
+  await p.query("BEGIN");
+  try {
+    await p.query("DELETE FROM group_list");
+    if (groups.length > 0) {
+      const values: unknown[] = [];
+      const placeholders: string[] = [];
+      for (let i = 0; i < groups.length; i++) {
+        const base = i * 2;
+        placeholders.push(`($${base + 1}, $${base + 2})`);
+        values.push(groups[i]!.group_name, groups[i]!.group_id);
+      }
+      const insertSql = `INSERT INTO group_list (group_name, group_id) VALUES ${placeholders.join(",")}`;
+      await p.query(insertSql, values);
+    }
+    await p.query("COMMIT");
+  } catch (err) {
+    await p.query("ROLLBACK");
+    throw err;
+  }
+}
+
 export default { getWhatsappQueue, closePool };

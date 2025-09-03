@@ -6,12 +6,14 @@ import type { BoomError } from "./types/ErrorTypes.js";
 import { addMembersToGroups } from "./core/addTask.js";
 import { removeMembersFromGroups } from "./core/removeTask.js";
 import { scanGroups } from "./core/scanTask.js";
-import { getPhoneNumbersWithStatus } from "./db/pgsql.js";
+import { getPhoneNumbersWithStatus, saveGroupsToList } from "./db/pgsql.js";
 import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { delaySecs } from "./utils/delay.js";
 import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
 import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
+import { checkPhoneNumber } from "./utils/phoneCheck.js";
+import { checkGroupType } from "./utils/checkGroupType.js";
 
 configDotenv({ path: ".env" });
 
@@ -36,6 +38,26 @@ async function main() {
   const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);
   const actionDelayJitter = Number(process.env.ACTION_DELAY_JITTER ?? 0.5);
 
+  // Sanity check: ensure a known number exists in DB
+  const sanityNumberRaw = process.env.SANITY_CHECK;
+  if (sanityNumberRaw) {
+    try {
+      const rows = await getPhoneNumbersWithStatus();
+      const phoneMap = preprocessPhoneNumbers(rows);
+      const sanitized = sanityNumberRaw.replace(/\D/g, "");
+      const checkResult = checkPhoneNumber(phoneMap, sanitized);
+      if (!checkResult.found) {
+        logger.fatal({ phone: sanitized }, "Sanity check failed: number not found in DB");
+        process.exit(1);
+      } else {
+        logger.info({ phone: sanitized }, "Sanity check passed");
+      }
+    } catch (err) {
+      logger.fatal({ err }, "Sanity check error; exiting");
+      process.exit(1);
+    }
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
   const { version } = await fetchLatestBaileysVersion();
 
@@ -59,10 +81,24 @@ async function main() {
     try {
       // Fetch and classify groups using Baileys
       const { adminGroups } = await processGroupsBaileys(sock);
+      // Filter to Mensa groups only (exclude non-Mensa groups) by group name/subject
+      const mensaAdminGroups = [] as typeof adminGroups;
+      for (const g of adminGroups) {
+        const name = g.subject ?? g.name ?? "";
+        const t = await checkGroupType(name);
+        if (t) mensaAdminGroups.push(g);
+      }
+      // Update DB with current groups list
+      try {
+        const toSave = mensaAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
+        await saveGroupsToList(toSave);
+      } catch (err) {
+        logger.warn({ err }, "Failed to save groups list to DB");
+      }
 
       // 1) Add task (id + name/subject)
       if (runAdd) {
-        const addTaskGroups = adminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
+        const addTaskGroups = mensaAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
         await addMembersToGroups(addTaskGroups);
       }
 
@@ -78,7 +114,7 @@ async function main() {
 
       // 3) Remove task
       if (runRemove && phoneMap) {
-        await removeMembersFromGroups(adminGroups, phoneMap);
+        await removeMembersFromGroups(mensaAdminGroups, phoneMap);
       }
 
       if (runRemove && (runScan || false)) {
@@ -87,8 +123,14 @@ async function main() {
 
       // 4) Scan task
       if (runScan && phoneMap) {
-        await scanGroups(adminGroups, phoneMap);
+        await scanGroups(mensaAdminGroups, phoneMap);
       }
+
+      // Mini summary
+      logger.info(
+        { adminGroupsFetched: adminGroups.length, mensaAdminGroups: mensaAdminGroups.length },
+        "Cycle summary",
+      );
     } catch (err) {
       logger.error({ err }, "Error running tasks in cycle");
     }
