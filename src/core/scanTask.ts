@@ -9,52 +9,18 @@ import {
 } from "../db/pgsql.js";
 import { delaySecs } from "../utils/delay.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
+import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 
 const ignoreNumbers = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
 const scanDelay = Number.parseInt(process.env.SCAN_DELAY ?? "1", 10) || 0;
 
-type MinimalParticipant = { id?: { user?: string } } | { user?: string } | { id: string } | string;
 type MinimalGroup = {
   id: string;
   subject?: string;
   name?: string;
-  participants: MinimalParticipant[];
+  participants: JidParticipant[];
 };
-
-function hasIdString(x: unknown): x is { id: string } {
-  return typeof x === "object" && x !== null && "id" in x && typeof (x as { id: unknown }).id === "string";
-}
-
-function hasIdUser(x: unknown): x is { id: { user?: string } } {
-  return (
-    typeof x === "object" &&
-    x !== null &&
-    "id" in x &&
-    typeof (x as { id: unknown }).id === "object" &&
-    (x as { id: { user?: unknown } }).id !== null &&
-    "user" in (x as { id: { user?: unknown } }).id!
-  );
-}
-
-function hasUser(x: unknown): x is { user?: string } {
-  return typeof x === "object" && x !== null && "user" in x;
-}
-
-function extractUser(p: MinimalParticipant): string | null {
-  if (typeof p === "string") return p;
-  if (hasIdString(p)) {
-    const jid = p.id;
-    return jid.split("@")[0] ?? null;
-  }
-  if (hasIdUser(p)) {
-    return String(p.id.user);
-  }
-  if (hasUser(p)) {
-    return String(p.user);
-  }
-  return null;
-}
 
 export async function scanGroups(
   groups: MinimalGroup[],
@@ -73,7 +39,7 @@ export async function scanGroups(
       logger.debug({ count: previousMembers.length }, "Previous members count");
 
       const participants = group.participants;
-      const groupMembers = participants.map(extractUser).filter((x): x is string => Boolean(x));
+      const groupMembers = participants.map(extractPhoneFromParticipant).filter((x): x is string => Boolean(x));
       logger.debug({ count: groupMembers.length }, "Current members count");
 
       const wppQueue = await getWhatsappQueue(groupId);

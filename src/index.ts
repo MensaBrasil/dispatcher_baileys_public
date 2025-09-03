@@ -10,6 +10,8 @@ import { getPhoneNumbersWithStatus } from "./db/pgsql.js";
 import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { delaySecs } from "./utils/delay.js";
 import { Command } from "commander";
+import { processGroupsBaileys } from "./utils/groups.js";
+import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
 
 configDotenv({ path: ".env" });
 
@@ -26,6 +28,9 @@ async function main() {
   const runAdd = anySpecified ? Boolean(opts.add) : true;
   const runRemove = anySpecified ? Boolean(opts.remove) : true;
   const runScan = anySpecified ? Boolean(opts.scan) : process.env.ENABLE_SCAN === "true";
+
+  // Ensure Twilio is properly configured and available before doing any work
+  await ensureTwilioClientReadyOrExit();
 
   const actionDelayMin = Number(process.env.ACTION_DELAY_MIN ?? 1);
   const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);
@@ -52,15 +57,8 @@ async function main() {
 
   async function runCycleOnce() {
     try {
-      // Fetch groups from Baileys (uses socket)
-      const all = await sock.groupFetchAllParticipating();
-      const groups = Object.values(all).map((g) => ({
-        id: g.id,
-        subject: g.subject,
-        name: g.subject,
-        participants: g.participants,
-        announceGroup: (g as unknown as { announceGroup?: string | null })?.announceGroup ?? null,
-      }));
+      // Fetch and classify groups using Baileys, ensuring admin-only groups
+      const { groups } = await processGroupsBaileys(sock);
 
       // 1) Add task (id + name/subject)
       if (runAdd) {

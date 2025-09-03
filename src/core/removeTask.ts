@@ -4,53 +4,19 @@ import { triggerTwilioOrRemove } from "../utils/twilio.js";
 import { isRegularJBGroup, isMJBGroup, isNonJBGroup, isAJBGroup, isMBMulheresGroup } from "../utils/checkGroupType.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
+import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
 
 const dontRemove = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
 const exceptions = (process.env.EXCEPTIONS ?? "").split(",").filter(Boolean);
 const jbExceptionGroupNames = ["MB | N-SIGs Mensa Brasil", "MB | Xadrez"]; // legacy exceptions
 
-type MinimalParticipant = { id?: { user?: string } } | { user?: string } | { id: string } | string;
 type MinimalGroup = {
   id: string;
   subject?: string;
   name?: string;
-  participants: MinimalParticipant[];
+  participants: JidParticipant[];
   announceGroup?: string | null;
 };
-
-function hasIdString(x: unknown): x is { id: string } {
-  return typeof x === "object" && x !== null && "id" in x && typeof (x as { id: unknown }).id === "string";
-}
-
-function hasIdUser(x: unknown): x is { id: { user?: string } } {
-  return (
-    typeof x === "object" &&
-    x !== null &&
-    "id" in x &&
-    typeof (x as { id: unknown }).id === "object" &&
-    (x as { id: { user?: unknown } }).id !== null &&
-    "user" in (x as { id: { user?: unknown } }).id!
-  );
-}
-
-function hasUser(x: unknown): x is { user?: string } {
-  return typeof x === "object" && x !== null && "user" in x;
-}
-
-function extractUser(p: MinimalParticipant): string | null {
-  if (typeof p === "string") return p;
-  if (hasIdString(p)) {
-    const jid = p.id;
-    return jid.split("@")[0] ?? null;
-  }
-  if (hasIdUser(p)) {
-    return String(p.id.user);
-  }
-  if (hasUser(p)) {
-    return String(p.user);
-  }
-  return null;
-}
 
 export async function removeMembersFromGroups(
   groups: MinimalGroup[],
@@ -69,7 +35,7 @@ export async function removeMembersFromGroups(
     try {
       const groupId = group.id;
       const groupName = group.subject ?? group.name ?? "";
-      const groupMembers = group.participants.map(extractUser).filter((x): x is string => Boolean(x));
+      const groupMembers = group.participants.map(extractPhoneFromParticipant).filter((x): x is string => Boolean(x));
 
       for (const member of groupMembers) {
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
