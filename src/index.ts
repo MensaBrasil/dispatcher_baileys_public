@@ -3,10 +3,34 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import qrcode from "qrcode-terminal";
 import logger, { sanitizeLevel } from "./utils/logger.js";
 import type { BoomError } from "./types/ErrorTypes.js";
+import { addMembersToGroups } from "./core/addTask.js";
+import { removeMembersFromGroups } from "./core/removeTask.js";
+import { scanGroups } from "./core/scanTask.js";
+import { getPhoneNumbersWithStatus } from "./db/pgsql.js";
+import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
+import { delaySecs } from "./utils/delay.js";
+import { Command } from "commander";
 
 configDotenv({ path: ".env" });
 
 async function main() {
+  // CLI options
+  const program = new Command();
+  program
+    .option("--add", "Run add task")
+    .option("--remove", "Run remove task")
+    .option("--scan", "Run scan task (group membership tracking)");
+  program.parse(process.argv);
+  const opts = program.opts<{ add?: boolean; remove?: boolean; scan?: boolean }>();
+  const anySpecified = Boolean(opts.add || opts.remove || opts.scan);
+  const runAdd = anySpecified ? Boolean(opts.add) : true;
+  const runRemove = anySpecified ? Boolean(opts.remove) : true;
+  const runScan = anySpecified ? Boolean(opts.scan) : process.env.ENABLE_SCAN === "true";
+
+  const actionDelayMin = Number(process.env.ACTION_DELAY_MIN ?? 1);
+  const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);
+  const actionDelayJitter = Number(process.env.ACTION_DELAY_JITTER ?? 0.5);
+
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
   const { version } = await fetchLatestBaileysVersion();
 
@@ -22,6 +46,73 @@ async function main() {
 
   let lastQR: string | undefined;
 
+  // Orchestration: run tasks once per cycle
+  const cycleMinutes = Number(process.env.CYCLE_MINUTES ?? 30);
+  let loopStarted = false;
+
+  async function runCycleOnce() {
+    try {
+      // Fetch groups from Baileys (uses socket)
+      const all = await sock.groupFetchAllParticipating();
+      const groups = Object.values(all).map((g) => ({
+        id: g.id,
+        subject: g.subject,
+        name: g.subject,
+        participants: g.participants,
+        announceGroup: (g as unknown as { announceGroup?: string | null })?.announceGroup ?? null,
+      }));
+
+      // 1) Add task (id + name/subject)
+      if (runAdd) {
+        const addTaskGroups = groups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
+        await addMembersToGroups(addTaskGroups);
+      }
+
+      // Optional delay between actions that may touch services
+      await delaySecs(actionDelayMin, actionDelayMax, actionDelayJitter);
+
+      // 2) Build phone map if needed for remove/scan
+      let phoneMap: ReturnType<typeof preprocessPhoneNumbers> | undefined;
+      if (runRemove || runScan) {
+        const phoneRows = await getPhoneNumbersWithStatus();
+        phoneMap = preprocessPhoneNumbers(phoneRows);
+      }
+
+      // 3) Remove task
+      if (runRemove && phoneMap) {
+        await removeMembersFromGroups(groups, phoneMap);
+      }
+
+      if (runRemove && (runScan || false)) {
+        await delaySecs(actionDelayMin, actionDelayMax, actionDelayJitter);
+      }
+
+      // 4) Scan task
+      if (runScan && phoneMap) {
+        await scanGroups(groups, phoneMap);
+      }
+    } catch (err) {
+      logger.error({ err }, "Error running tasks in cycle");
+    }
+  }
+
+  async function startLoop() {
+    if (loopStarted) return;
+    loopStarted = true;
+    logger.info({ minutes: cycleMinutes }, "Starting main loop (one run every N minutes)");
+    // First run immediately
+    await runCycleOnce();
+    // Then run every cycle
+    // Use an infinite loop with a delay to keep sequencing predictable
+    // and ensure a single execution per interval.
+    // 30 minutes default, configurable via CYCLE_MINUTES.
+    while (true) {
+      const waitSeconds = Math.max(1, Math.floor(cycleMinutes * 60));
+      await delaySecs(waitSeconds, waitSeconds);
+      await runCycleOnce();
+    }
+  }
+
   sock.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
     if (qr) {
       if (qr !== lastQR) {
@@ -33,6 +124,8 @@ async function main() {
 
     if (connection === "open") {
       logger.info("[wa] connection opened.");
+      // Start the orchestrator loop once after connection is open
+      startLoop().catch((err) => logger.error({ err }, "Loop start error"));
     }
     if (connection === "close") {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
