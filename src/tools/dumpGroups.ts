@@ -63,17 +63,18 @@ async function main(): Promise<void> {
         // Build a concise summary
         const values = Object.values(all) as GroupMetadata[];
         const total = values.length;
-        const meJid = sock.user?.id;
+        const meBare = sock.user?.id?.split(":")[0];
+        const me = meBare ? `${meBare}@s.whatsapp.net` : undefined;
         type MaybeJid = { jid?: string };
-        const isMe = (p: GroupParticipant & MaybeJid, me: string | undefined) => {
-          if (!me) return false;
+        const isMe = (p: GroupParticipant & MaybeJid, meFull: string | undefined) => {
+          if (!meFull) return false;
           const pid = p.id;
           const pjid = p.jid;
-          return pid === me || pjid === me;
+          return pid === meFull || pjid === meFull;
         };
         const isAdmin = (g: GroupMetadata) =>
           (g.participants || []).some(
-            (p) => isMe(p as GroupParticipant & MaybeJid, meJid) && Boolean((p as GroupParticipant).admin),
+            (p) => isMe(p as GroupParticipant & MaybeJid, me) && Boolean((p as GroupParticipant).admin),
           );
         const community = values.filter((g) => Boolean(g.isCommunity)).length;
         const communityAnnounce = values.filter((g) => Boolean(g.isCommunityAnnounce)).length;
@@ -102,10 +103,24 @@ async function main(): Promise<void> {
           (g) => !g.isCommunity && !g.isCommunityAnnounce && !g.linkedParent,
         ).length;
         const adminCount = values.filter((g) => isAdmin(g)).length;
-        const largest = values
-          .map((g) => ({ id: g.id, subject: g.subject, size: g.size ?? 0 }))
-          .sort((a, b) => b.size - a.size)
-          .slice(0, 10);
+
+        // Classification by group name for non-community groups
+        const regularGroups = values.filter((g) => !g.isCommunity && !g.isCommunityAnnounce);
+        const { checkGroupType } = await import("../utils/checkGroupType.js");
+        type GT = "MB" | "MJB" | "RJB" | "AJB" | "JB" | null;
+        const typeCounts: Record<Exclude<GT, null> | "NotMensa", number> = {
+          MB: 0,
+          MJB: 0,
+          RJB: 0,
+          AJB: 0,
+          JB: 0,
+          NotMensa: 0,
+        };
+        for (const g of regularGroups) {
+          const t = (await checkGroupType(g.subject)) as GT;
+          if (t) typeCounts[t] = (typeCounts[t] ?? 0) + 1;
+          else typeCounts.NotMensa += 1;
+        }
 
         const summary = {
           totals: {
@@ -119,7 +134,14 @@ async function main(): Promise<void> {
           },
           addressingMode: addressingCounts,
           communities: communitiesWithNames,
-          largestGroupsTop10: largest,
+          groupTypes: {
+            notMensa: typeCounts.NotMensa,
+            MB: typeCounts.MB,
+            JB: typeCounts.JB,
+            MJB: typeCounts.MJB,
+            RJB: typeCounts.RJB,
+            AJB: typeCounts.AJB,
+          },
         };
         const summaryPath = path.join(outDir, `groups_summary_${ts}.json`);
         await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");

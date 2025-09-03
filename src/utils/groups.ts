@@ -1,6 +1,6 @@
 import type { WASocket, GroupMetadata } from "baileys";
 
-type BaileysParticipant = { id: string; admin?: "admin" | "superadmin" | null } | { id: string } | string;
+type BaileysParticipant = { id: string; admin?: "admin" | "superadmin" | null; jid?: string } | { id: string } | string;
 
 export type MinimalGroup = {
   id: string;
@@ -13,13 +13,20 @@ export type MinimalGroup = {
   isCommunityAnnounce?: boolean;
 };
 
-function isAdminForMe(participants: BaileysParticipant[], meJid: string): boolean {
+function hasJid(x: unknown): x is { jid?: string } {
+  return typeof x === "object" && x !== null && "jid" in x;
+}
+
+function isAdminForMe(participants: BaileysParticipant[], socketMeJid: string | undefined): boolean {
+  const meBare = socketMeJid?.split(":")[0];
+  const me = meBare ? `${meBare}@s.whatsapp.net` : undefined;
+  if (!me) return false;
   for (const p of participants) {
-    const id = typeof p === "string" ? p : (p as { id?: string }).id;
-    if (!id) continue;
-    if (id === meJid) {
-      if (typeof p === "string") return false; // cannot know, assume not admin
-      const role = (p as { admin?: string | null }).admin;
+    const pid = typeof p === "string" ? p : (p as { id: string }).id;
+    const pjid = typeof p === "string" ? undefined : hasJid(p) ? p.jid : undefined;
+    if (pid === me || pjid === me) {
+      if (typeof p === "string") return false;
+      const role = (p as { admin?: "admin" | "superadmin" | null }).admin;
       return Boolean(role);
     }
   }
