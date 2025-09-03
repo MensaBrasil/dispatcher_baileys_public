@@ -13,7 +13,7 @@ import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
 import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
 import { checkPhoneNumber } from "./utils/phoneCheck.js";
-import { checkGroupType, isOrgMBGroup } from "./utils/checkGroupType.js";
+import { isOrgMBGroup } from "./utils/checkGroupType.js";
 
 configDotenv({ path: ".env" });
 
@@ -81,18 +81,11 @@ async function main() {
     try {
       // Fetch and classify groups using Baileys
       const { adminGroups } = await processGroupsBaileys(sock);
-      // Filter to Mensa groups only (exclude non-Mensa groups) by group name/subject
-      const mensaAdminGroups = [] as typeof adminGroups;
-      for (const g of adminGroups) {
-        const name = g.subject ?? g.name ?? "";
-        const t = await checkGroupType(name);
-        if (t) mensaAdminGroups.push(g);
-      }
-      // Update DB with current groups list (exclude OrgMB groups)
+      // Filter out OrgMB groups only (keep all others)
+      const mensaAdminGroups = adminGroups.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
+      // Update DB with current groups list (OrgMB already excluded)
       try {
-        const toSave = mensaAdminGroups
-          .filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""))
-          .map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
+        const toSave = mensaAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
         await saveGroupsToList(toSave);
       } catch (err) {
         logger.warn({ err }, "Failed to save groups list to DB");
