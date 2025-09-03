@@ -133,6 +133,7 @@ async function main(): Promise<void> {
             groupsWithoutCommunity: withoutCommunity,
             adminGroups: adminCount,
           },
+          groupNames: values.map((g) => g.subject),
           addressingMode: addressingCounts,
           communities: communitiesWithNames,
           groupTypes: {
