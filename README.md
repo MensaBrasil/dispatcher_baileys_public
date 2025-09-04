@@ -3,20 +3,21 @@ Dispatcher — Operação e Documentação (add/remove/scan)
 Visão geral
 
 - Objetivo: Orquestrar ciclos de manutenção de grupos WhatsApp (via Baileys + DB + Redis), executando as tarefas de adicionar, remover e escanear uma única vez por ciclo.
-- Ciclo: Executa exatamente uma vez a cada 30 minutos (configurável por `CYCLE_MINUTES`). Entre ações que usam o socket e entre tarefas, há atrasos aleatórios para reduzir risco de ban.
+- Ciclo: Executa exatamente uma vez por intervalo configurável (em segundos) via `CYCLE_DELAY_SECONDS`. Entre ações que usam o socket e entre tarefas, há atrasos aleatórios para reduzir risco de ban.
 
 Execução
 
 - CLI: `pnpm start [--add] [--remove] [--scan]`
   - Sem flags: executa add, remove e (opcionalmente) scan se `ENABLE_SCAN=true`.
   - Com flags: executa apenas as tarefas selecionadas.
-- Loop principal: inicia após `connection=open` no Baileys e repete a cada `CYCLE_MINUTES`.
+- Loop principal: inicia após `connection=open` no Baileys e repete a cada `CYCLE_DELAY_SECONDS`.
 - Delays: controlados por `ACTION_DELAY_MIN`/`ACTION_DELAY_MAX`/`ACTION_DELAY_JITTER` (segundos) e aplicados entre as tarefas.
   `SCAN_DELAY` controla atraso por grupo durante o scan.
 
 Ambiente (variáveis relevantes)
 
-- `CYCLE_MINUTES` (padrão: 30): intervalo do loop, em minutos.
+- `CYCLE_DELAY_SECONDS` (padrão: 1800): intervalo do loop, em segundos.
+- `CYCLE_JITTER_SECONDS` (padrão: 0): jitter aleatório em segundos somado/subtraído do intervalo para evitar padrões.
 - `ACTION_DELAY_MIN` (padrão: 1), `ACTION_DELAY_MAX` (padrão: 3), `ACTION_DELAY_JITTER` (padrão: 0.5): atraso aleatório entre tarefas.
 - `ENABLE_SCAN` (padrão: false): habilita tarefa de scan quando nenhuma flag é passada.
 - Credenciais de Postgres e Redis: ver `.env.example`.

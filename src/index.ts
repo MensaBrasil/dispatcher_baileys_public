@@ -73,12 +73,27 @@ async function main() {
 
   let lastQR: string | undefined;
 
-  // Orchestration: run tasks once per cycle
-  const cycleMinutes = Number(process.env.CYCLE_MINUTES ?? 30);
+  // Orchestration: run tasks once per cycle (seconds only)
+  const cycleDelaySeconds = Math.max(1, Math.floor(Number(process.env.CYCLE_DELAY_SECONDS ?? 1800)));
+  const cycleJitterSeconds = Math.max(0, Math.floor(Number(process.env.CYCLE_JITTER_SECONDS ?? 0)));
   let loopStarted = false;
+  let isConnected = false;
+  let isCycleRunning = false;
+  let pendingImmediateRunOnOpen = false;
 
   async function runCycleOnce() {
     try {
+      if (!isConnected) {
+        // mark to run immediately once connection is restored
+        pendingImmediateRunOnOpen = true;
+        logger.warn("[wa] not connected; skipping cycle run");
+        return;
+      }
+      if (isCycleRunning) {
+        logger.warn("Cycle already running; skipping overlapping run");
+        return;
+      }
+      isCycleRunning = true;
       // Fetch and classify groups using Baileys
       const { adminGroups } = await processGroupsBaileys(sock);
       // Filter out OrgMB groups only (keep all others)
@@ -127,23 +142,37 @@ async function main() {
         "Cycle summary",
       );
     } catch (err) {
+      // If the connection was closed in-between, avoid spamming hard errors
+      const code = (err as BoomError)?.output?.statusCode;
+      if (code === DisconnectReason.loggedOut) {
+        logger.fatal({ err }, "Session logged out during cycle; exiting");
+        process.exit(1);
+      }
+      const message = (err as BoomError)?.output?.payload?.message;
+      if (message === "Connection Closed" || code === 428) {
+        logger.warn({ err }, "Cycle run skipped due to closed connection");
+        return;
+      }
       logger.error({ err }, "Error running tasks in cycle");
+    } finally {
+      isCycleRunning = false;
     }
   }
 
   async function startLoop() {
     if (loopStarted) return;
     loopStarted = true;
-    logger.info({ minutes: cycleMinutes }, "Starting main loop (one run every N minutes)");
+    logger.info(
+      { intervalSeconds: cycleDelaySeconds, jitterSeconds: cycleJitterSeconds },
+      "Starting main loop (one run per interval)",
+    );
     // First run immediately
     await runCycleOnce();
     // Then run every cycle
-    // Use an infinite loop with a delay to keep sequencing predictable
-    // and ensure a single execution per interval.
-    // 30 minutes default, configurable via CYCLE_MINUTES.
     while (true) {
-      const waitSeconds = Math.max(1, Math.floor(cycleMinutes * 60));
-      await delaySecs(waitSeconds, waitSeconds);
+      const minDelay = Math.max(1, cycleDelaySeconds - cycleJitterSeconds);
+      const maxDelay = cycleDelaySeconds + cycleJitterSeconds;
+      await delaySecs(minDelay, maxDelay);
       await runCycleOnce();
     }
   }
@@ -158,11 +187,19 @@ async function main() {
     }
 
     if (connection === "open") {
+      isConnected = true;
       logger.info("[wa] connection opened.");
       // Start the orchestrator loop once after connection is open
-      startLoop().catch((err) => logger.error({ err }, "Loop start error"));
+      if (!loopStarted) {
+        startLoop().catch((err) => logger.error({ err }, "Loop start error"));
+      } else if (pendingImmediateRunOnOpen && !isCycleRunning) {
+        pendingImmediateRunOnOpen = false;
+        // Trigger an immediate cycle after reconnect
+        runCycleOnce().catch((err) => logger.error({ err }, "Immediate run after reconnect failed"));
+      }
     }
     if (connection === "close") {
+      isConnected = false;
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
 
