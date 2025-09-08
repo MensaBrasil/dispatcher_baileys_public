@@ -20,4 +20,5 @@ export interface PhoneCheckResult {
   jb_over_10?: boolean;
   is_adult?: boolean;
   is_legal_representative?: boolean;
+  has_adult_female?: boolean;
 }

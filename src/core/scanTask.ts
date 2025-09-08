@@ -25,9 +25,12 @@ type MinimalGroup = {
   participants: JidParticipant[];
 };
 
+export type SendSeenFn = (groupId: string) => Promise<void>;
+
 export async function scanGroups(
   groups: MinimalGroup[],
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
+  opts?: { sendSeen?: SendSeenFn },
 ): Promise<void> {
   for (const group of groups) {
     if (scanDelay > 0) {
@@ -38,6 +41,13 @@ export async function scanGroups(
       logger.info({ group: groupName }, `Scanning group: ${groupName}`);
 
       const groupId = group.id;
+      // Best-effort: send a seen/read signal for the latest message in this group
+      try {
+        if (opts?.sendSeen) await opts.sendSeen(groupId);
+      } catch (err) {
+        logger.debug({ err, group: groupName }, "Failed to send seen signal (non-fatal)");
+      }
+
       const previousMembers = await getPreviousGroupMembers(groupId);
       logger.debug({ count: previousMembers.length }, "Previous members count");
 

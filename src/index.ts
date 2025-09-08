@@ -1,19 +1,26 @@
 import { config as configDotenv } from "dotenv";
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from "baileys";
+import type { WASocket } from "baileys";
+import type { WAMessageKey } from "baileys";
 import qrcode from "qrcode-terminal";
 import logger, { sanitizeLevel } from "./utils/logger.js";
 import type { BoomError } from "./types/ErrorTypes.js";
-import { addMembersToGroups } from "./core/addTask.js";
-import { removeMembersFromGroups } from "./core/removeTask.js";
+import { addMembersToGroups, type AddSummary } from "./core/addTask.js";
+import { removeMembersFromGroups, type RemoveSummary } from "./core/removeTask.js";
 import { scanGroups } from "./core/scanTask.js";
 import { getPhoneNumbersWithStatus, saveGroupsToList } from "./db/pgsql.js";
 import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { delaySecs } from "./utils/delay.js";
 import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
+import type { MinimalGroup } from "./utils/groups.js";
 import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
 import { checkPhoneNumber } from "./utils/phoneCheck.js";
 import { isOrgMBGroup } from "./utils/checkGroupType.js";
+import { buildAllowedGroups, createMessageProcessor } from "./core/messagesTask.js";
+import { MessageStore } from "./store/messageStore.js";
+import { getQueueLength } from "./db/redis.js";
+import { writeFile } from "fs/promises";
 
 configDotenv({ path: ".env" });
 
@@ -61,15 +68,9 @@ async function main() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
   const { version } = await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    browser: Browsers.ubuntu("Desktop"),
-    logger: logger.child({ module: "baileys" }, { level: sanitizeLevel(process.env.BAILEYS_LOG_LEVEL, "fatal") }),
-    printQRInTerminal: false,
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-  });
+  const enableFullHistory = process.env.WPP_SYNC_FULL_HISTORY === "true";
+  const messageStore = await MessageStore.create({ filePath: process.env.MESSAGE_STORE_PATH });
+  let sock: WASocket;
 
   let lastQR: string | undefined;
 
@@ -80,6 +81,9 @@ async function main() {
   let isConnected = false;
   let isCycleRunning = false;
   let pendingImmediateRunOnOpen = false;
+
+  let messageProcessor: ReturnType<typeof createMessageProcessor> | undefined;
+  let _latestAllowedGroupsForMessages: MinimalGroup[] | undefined;
 
   async function runCycleOnce() {
     try {
@@ -95,9 +99,22 @@ async function main() {
       }
       isCycleRunning = true;
       // Fetch and classify groups using Baileys
-      const { adminGroups } = await processGroupsBaileys(sock);
-      // Filter out OrgMB groups only (keep all others)
-      const mensaAdminGroups = adminGroups.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
+      const { groups, adminGroups, community, communityAnnounce } = await processGroupsBaileys(sock);
+      // Filter out OrgMB groups only (keep all others) and then apply Mensa classification for message history
+      const adminNonOrg = adminGroups.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
+      const mensaAdminGroups = adminNonOrg;
+
+      // Build allowed groups for message sync (Mensa groups except OrgMB)
+      try {
+        const allowedGroups = await buildAllowedGroups(adminNonOrg);
+        _latestAllowedGroupsForMessages = adminNonOrg;
+        messageProcessor = createMessageProcessor(sock, allowedGroups, {
+          filterByLastTimestamp: true,
+          dbBatchSize: Math.max(1, Number(process.env.WPP_MSG_DB_BATCH ?? 200)),
+        });
+      } catch (err) {
+        logger.warn({ err }, "Failed to build message processor allowed groups");
+      }
       // Update DB with current groups list (OrgMB already excluded)
       try {
         const toSave = mensaAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
@@ -107,9 +124,10 @@ async function main() {
       }
 
       // 1) Add task (id + name/subject)
+      let addSummary: AddSummary | undefined;
       if (runAdd) {
         const addTaskGroups = mensaAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
-        await addMembersToGroups(addTaskGroups);
+        addSummary = await addMembersToGroups(addTaskGroups);
       }
 
       // Optional delay between actions that may touch services
@@ -123,8 +141,9 @@ async function main() {
       }
 
       // 3) Remove task
+      let removeSummary: RemoveSummary | undefined;
       if (runRemove && phoneMap) {
-        await removeMembersFromGroups(mensaAdminGroups, phoneMap);
+        removeSummary = await removeMembersFromGroups(mensaAdminGroups, phoneMap);
       }
 
       if (runRemove && (runScan || false)) {
@@ -133,16 +152,149 @@ async function main() {
 
       // 4) Scan task
       if (runScan && phoneMap) {
-        await scanGroups(mensaAdminGroups, phoneMap);
+        const sendSeen = async (groupId: string) => {
+          try {
+            const last = messageStore.getLastKeyForGroup(groupId);
+            if (!last) return;
+            await sock.readMessages([
+              {
+                remoteJid: groupId,
+                id: last.id,
+                fromMe: false,
+                participant: last.participant ?? undefined,
+              },
+            ]);
+            logger.debug({ groupId, id: last.id }, "Sent seen for last message in group");
+          } catch (err) {
+            logger.debug({ err, groupId }, "Failed to send seen for group (non-fatal)");
+          }
+        };
+        await scanGroups(mensaAdminGroups, phoneMap, { sendSeen });
       }
 
-      // Mini summary
-      logger.info(
-        { adminGroupsFetched: adminGroups.length, mensaAdminGroups: mensaAdminGroups.length },
-        "Cycle summary",
-      );
+      // End-of-cycle summary (stdout with colors)
+      try {
+        const totalGroupsAll = groups.length + community.length + communityAnnounce.length;
+        const notAdminCount = Math.max(0, groups.length - adminGroups.length);
+        const addQueueLength = await getQueueLength("addQueue");
+        const removeQueueLength = await getQueueLength("removeQueue");
+
+        const details = {
+          totalGroupsAll,
+          nonCommunityGroups: groups.length,
+          adminGroupsProcessed: mensaAdminGroups.length,
+          notAdminCount,
+          addSummary,
+          removeSummary,
+          queues: { addQueueLength, removeQueueLength },
+        };
+
+        // Render console summary
+        // Header
+
+        logger.info("\n\x1b[1m=== REMOVAL REPORT SUMMARY ===\x1b[0m");
+        // High-level counts
+
+        logger.info(`\x1b[36mTotal groups: ${totalGroupsAll}\x1b[0m`);
+
+        logger.info(`\x1b[36mTotal groups processed: ${mensaAdminGroups.length}\x1b[0m`);
+
+        logger.info(`\x1b[31mBot is not admin in: ${notAdminCount} groups\x1b[0m\n`);
+
+        // Members by issue
+
+        logger.info("\x1b[1mMember Count by Issue:\x1b[0m");
+        if (removeSummary) {
+          logger.info(`\x1b[33m• Total unique members affected: ${removeSummary.uniqueMembersAffected}`);
+
+          logger.info(
+            `• Inactive status: ${removeSummary.atleast1inactiveCount} members (${removeSummary.totalInactiveCount} total occurrences)`,
+          );
+
+          logger.info(
+            `• Not in database: ${removeSummary.atleast1notfoundCount} members (${removeSummary.totalNotFoundCount} total occurrences)`,
+          );
+
+          logger.info(
+            `• JB over 10 in M.JB: ${removeSummary.atleast1JBOver10MJBCount} members (${removeSummary.totalJBOver10MJBCount} total occurrences)`,
+          );
+
+          logger.info(
+            `• JB under 10 in JB: ${removeSummary.atleast1JBUnder10JBCount} members (${removeSummary.totalJBUnder10JBCount} total occurrences)`,
+          );
+
+          logger.info(
+            `• JB in non-JB: ${removeSummary.atleast1JBInNonJBCount} members (${removeSummary.totalJBInNonJBCount} total occurrences)\x1b[0m\n`,
+          );
+        } else {
+          logger.info("• No removals evaluated this cycle.\x1b[0m\n");
+        }
+
+        // Pending additions
+
+        logger.info("\x1b[1mPending Additions:\x1b[0m");
+        if (addSummary) {
+          logger.info(`\x1b[32m• Members awaiting addition: ${addSummary.atleast1PendingAdditionsCount}`);
+
+          logger.info(`• Total pending additions: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
+        } else {
+          logger.info("\x1b[32m• Add task disabled this cycle\x1b[0m\n");
+        }
+
+        // Special numbers
+        const dontRemoveList = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
+        const exceptionsList = (process.env.EXCEPTIONS ?? "").split(",").filter(Boolean);
+
+        logger.info("\x1b[1mSpecial Numbers:\x1b[0m");
+        if (removeSummary) {
+          logger.info(
+            `\x1b[35m• Don't Remove list: ${dontRemoveList.length} numbers (${removeSummary.dontRemoveInGroupsCount} total occurrences)`,
+          );
+
+          logger.info(
+            `• Exception list: ${exceptionsList.length} numbers (${removeSummary.exceptionsInGroupsCount} total occurrences)\x1b[0m\n`,
+          );
+        } else {
+          logger.info(`\x1b[35m• Don't Remove list: ${dontRemoveList.length} numbers (0 total occurrences)`);
+
+          logger.info(`• Exception list: ${exceptionsList.length} numbers (0 total occurrences)\x1b[0m\n`);
+        }
+
+        // Queues
+
+        logger.info("\x1b[1mTotal items in queue:\x1b[0m");
+
+        logger.info(`\x1b[32m• Add Queue: ${addQueueLength}`);
+
+        logger.info(`• Remove Queue: ${removeQueueLength}\x1b[0m`);
+
+        // Save details JSON (best-effort)
+        try {
+          await writeFile("report_details.json", JSON.stringify(details, null, 2), "utf8");
+
+          logger.info("\x1b[1mDetailed report saved to:\x1b[0m \x1b[36mreport_details.json\x1b[0m");
+        } catch (err) {
+          logger.warn({ err }, "Error writing report details to file");
+        }
+      } catch (err) {
+        logger.warn({ err }, "Failed to print cycle report summary");
+      }
+
+      try {
+        const uptimeUrl = process.env.UPTIME_URL;
+        if (uptimeUrl) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30_000);
+          try {
+            await fetch(uptimeUrl, { signal: controller.signal });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Uptime check failed");
+      }
     } catch (err) {
-      // If the connection was closed in-between, avoid spamming hard errors
       const code = (err as BoomError)?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
         logger.fatal({ err }, "Session logged out during cycle; exiting");
@@ -150,8 +302,8 @@ async function main() {
       }
       const message = (err as BoomError)?.output?.payload?.message;
       if (message === "Connection Closed" || code === 428) {
-        logger.warn({ err }, "Cycle run skipped due to closed connection");
-        return;
+        logger.fatal({ err }, "Closed connection detected during cycle; exiting");
+        process.exit(1);
       }
       logger.error({ err }, "Error running tasks in cycle");
     } finally {
@@ -177,42 +329,130 @@ async function main() {
     }
   }
 
-  sock.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
-    if (qr) {
-      if (qr !== lastQR) {
-        lastQR = qr;
-        qrcode.generate(qr, { small: true });
-        logger.info("Scan the QR code in WhatsApp > Connected devices");
+  // Reconnection controls
+  let reconnectAttempts = 0;
+  const maxReconnectAttempts = Math.max(1, Number(process.env.MAX_RECONNECT_ATTEMPTS ?? 5));
+  const maxBackoffMs = Math.max(1000, Number(process.env.MAX_RECONNECT_BACKOFF_MS ?? 30000));
+
+  async function initSocket() {
+    sock = makeWASocket({
+      version,
+      auth: state,
+      browser: Browsers.macOS("Desktop"),
+      logger: logger.child({ module: "baileys" }, { level: sanitizeLevel(process.env.BAILEYS_LOG_LEVEL, "fatal") }),
+      printQRInTerminal: false,
+      markOnlineOnConnect: false,
+      syncFullHistory: enableFullHistory,
+      getMessage: async (key) => messageStore.getMessage({ id: key.id }),
+    });
+
+    bindSocketEvents(sock);
+  }
+
+  function bindSocketEvents(s: WASocket) {
+    s.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
+      if (qr) {
+        if (qr !== lastQR) {
+          lastQR = qr;
+          qrcode.generate(qr, { small: true });
+          logger.info("Scan the QR code in WhatsApp > Connected devices");
+        }
       }
-    }
 
-    if (connection === "open") {
-      isConnected = true;
-      logger.info("[wa] connection opened.");
-      // Start the orchestrator loop once after connection is open
-      if (!loopStarted) {
-        startLoop().catch((err) => logger.error({ err }, "Loop start error"));
-      } else if (pendingImmediateRunOnOpen && !isCycleRunning) {
-        pendingImmediateRunOnOpen = false;
-        // Trigger an immediate cycle after reconnect
-        runCycleOnce().catch((err) => logger.error({ err }, "Immediate run after reconnect failed"));
-      }
-    }
-    if (connection === "close") {
-      isConnected = false;
-      const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
-      const isLoggedOut = code === DisconnectReason.loggedOut;
-
-      if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] connection closed: Session logged out. Delete ./auth and link again.");
-        process.exit(1);
+      if (connection === "open") {
+        isConnected = true;
+        reconnectAttempts = 0;
+        logger.info("[wa] connection opened.");
+        // Start the orchestrator loop once after connection is open
+        if (!loopStarted) {
+          startLoop().catch((err) => logger.error({ err }, "Loop start error"));
+        } else if (pendingImmediateRunOnOpen && !isCycleRunning) {
+          pendingImmediateRunOnOpen = false;
+          // Trigger an immediate cycle after reconnect
+          runCycleOnce().catch((err) => logger.error({ err }, "Immediate run after reconnect failed"));
+        }
+        return;
       }
 
-      logger.warn({ code }, "[wa] connection closed; attempting auto-reconnect...");
-    }
-  });
+      if (connection === "close") {
+        isConnected = false;
+        const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
+        const isLoggedOut = code === DisconnectReason.loggedOut;
 
-  sock.ev.on("creds.update", saveCreds);
+        if (isLoggedOut) {
+          logger.fatal({ code }, "[wa] connection closed: Session logged out. Delete ./auth and link again.");
+          process.exit(1);
+        }
+
+        reconnectAttempts += 1;
+        if (reconnectAttempts > maxReconnectAttempts) {
+          logger.fatal({ attempts: reconnectAttempts }, "Exceeded max reconnect attempts; exiting");
+          process.exit(1);
+        }
+
+        const backoff = Math.min(maxBackoffMs, 1000 * Math.pow(2, reconnectAttempts - 1));
+        logger.warn({ code, attempt: reconnectAttempts, backoff }, "[wa] connection closed; reinitializing socket...");
+
+        setTimeout(() => {
+          // Mark to run immediately once connection is restored
+          pendingImmediateRunOnOpen = true;
+          initSocket().catch((err) => {
+            logger.error({ err }, "Socket re-init failed");
+          });
+        }, backoff);
+      }
+    });
+
+    s.ev.on("creds.update", saveCreds);
+
+    // Handle message history & live messages
+    s.ev.on("messaging-history.set", async ({ messages, progress, isLatest, syncType }) => {
+      try {
+        if (!messageProcessor) return;
+        const count = await messageProcessor.processMessages(messages);
+        // Update local message store (id + last per group)
+        messageStore.updateFromMessages(messages);
+        logger.info(
+          { received: messages.length, inserted: count, progress, isLatest, syncType },
+          "Processed history messages batch",
+        );
+      } catch (err) {
+        logger.error({ err }, "Failed processing messaging-history.set");
+      }
+    });
+
+    s.ev.on("messages.upsert", async ({ messages, type }) => {
+      try {
+        if (!messageProcessor) return;
+        const count = await messageProcessor.processMessages(messages);
+        // Update local message store
+        messageStore.updateFromMessages(messages);
+        // Mark all new incoming (not from me) messages as read
+        try {
+          const keys: WAMessageKey[] = [];
+          for (const m of messages) {
+            const id = m.key.id;
+            const jid = m.key.remoteJid;
+            if (!id || !jid) continue;
+            if (m.key.fromMe) continue;
+            keys.push({ id, remoteJid: jid, fromMe: false, participant: m.key.participant ?? undefined });
+          }
+          if (keys.length) {
+            await s.readMessages(keys);
+            logger.debug({ count: keys.length }, "Marked new messages as read");
+          }
+        } catch (err) {
+          logger.debug({ err }, "Failed to mark new messages as read (non-fatal)");
+        }
+        logger.debug({ received: messages.length, inserted: count, type }, "Processed live messages upsert");
+      } catch (err) {
+        logger.error({ err }, "Failed processing messages.upsert");
+      }
+    });
+  }
+
+  // initialize first socket
+  await initSocket();
 
   let shuttingDown = false;
   const shutdown = (signal: string) => {

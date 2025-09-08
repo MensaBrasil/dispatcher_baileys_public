@@ -6,7 +6,12 @@ import type { GroupType } from "../types/DBTypes.js";
 
 type MinimalGroup = { id: string; subject?: string; name?: string };
 
-export async function addMembersToGroups(groups: MinimalGroup[]): Promise<void> {
+export type AddSummary = {
+  totalPendingAdditionsCount: number;
+  atleast1PendingAdditionsCount: number; // unique registrations awaiting addition
+};
+
+export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSummary> {
   const queueItems: Array<{
     type: "add";
     request_id: number;
@@ -14,6 +19,10 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<void> 
     group_id: string;
     group_type: GroupType | null;
   }> = [];
+
+  // Track totals for the cycle
+  let totalPending = 0;
+  const uniqueRegistrations = new Set<number>();
 
   for (const group of groups) {
     const groupId = group.id;
@@ -31,6 +40,8 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<void> 
             group_type: await checkGroupType(groupName),
           };
           queueItems.push(item);
+          totalPending += 1;
+          uniqueRegistrations.add(request.registration_id);
         } catch (error: unknown) {
           logger.error(
             { err: error, registration_id: request.registration_id, groupId },
@@ -53,6 +64,10 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<void> 
 
   await disconnectRedis();
   await closePool();
+  return {
+    totalPendingAdditionsCount: totalPending,
+    atleast1PendingAdditionsCount: uniqueRegistrations.size,
+  };
 }
 
 export default { addMembersToGroups };

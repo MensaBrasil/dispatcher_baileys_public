@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import logger from "../utils/logger.js";
 import type { DBGroupRequest } from "../types/DBTypes.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
+import type { WhatsappMessageRow } from "../types/DBTypes.js";
 
 configDotenv({ path: ".env" });
 
@@ -214,6 +215,78 @@ export async function saveGroupsToList(groups: Array<{ group_id: string; group_n
     await p.query("ROLLBACK");
     throw err;
   }
+}
+
+/**
+ * Returns the latest message timestamp (unix seconds) for a given group
+ * or 0 if nothing exists.
+ */
+export async function getLastMessageTimestamp(groupId: string): Promise<number> {
+  const p = getPool();
+  const query = `
+    SELECT EXTRACT(EPOCH FROM MAX(timestamp))::INT AS unix_timestamp
+    FROM whatsapp_messages
+    WHERE group_id = $1
+  `;
+  const { rows } = await p.query<{ unix_timestamp: number | null }>(query, [groupId]);
+  const ts = rows[0]?.unix_timestamp ?? 0;
+  return ts || 0;
+}
+
+/**
+ * Inserts WhatsApp messages in bulk. Ignores duplicates on message_id.
+ */
+export async function insertNewWhatsAppMessages(messages: WhatsappMessageRow[]): Promise<number> {
+  if (!messages.length) return 0;
+  // Defensive: skip any rows without phone to satisfy NOT NULL constraint
+  const valid = messages.filter((m) => !!m.phone);
+  if (!valid.length) {
+    logger.debug({ dropped: messages.length }, "[pg] No valid whatsapp messages to insert (missing phone)");
+    return 0;
+  }
+  const p = getPool();
+
+  const cols = [
+    "message_id",
+    "group_id",
+    "registration_id",
+    "timestamp",
+    "phone",
+    "message_type",
+    "device_type",
+    "content",
+  ];
+
+  const values: unknown[] = [];
+  const placeholders: string[] = [];
+  for (let i = 0; i < valid.length; i++) {
+    const base = i * cols.length;
+    placeholders.push(
+      `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`,
+    );
+    const m = valid[i]!;
+    values.push(
+      m.message_id,
+      m.group_id,
+      m.registration_id ?? null,
+      m.timestamp,
+      m.phone!,
+      m.message_type,
+      m.device_type,
+      m.content ?? null,
+    );
+  }
+
+  const sql = `
+    INSERT INTO whatsapp_messages (${cols.join(", ")})
+    VALUES ${placeholders.join(", ")}
+    ON CONFLICT (message_id) DO NOTHING
+  `;
+  const res = await p.query(sql, values);
+  // rowCount will be 0 when all conflicted; PG may not return per-row inserted count for multi-values
+  // Fallback to messages.length is inaccurate when conflicts happen; try to infer using GET DIAGNOSTICS is complex here.
+  // Return res.rowCount if available, else 0.
+  return res.rowCount ?? 0;
 }
 
 export default { getWhatsappQueue, closePool };

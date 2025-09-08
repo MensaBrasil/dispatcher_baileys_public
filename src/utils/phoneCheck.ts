@@ -45,11 +45,13 @@ export function checkPhoneNumber(
     let hasJbUnder10 = false;
     let hasJbOver10 = false;
     let hasAdult = false;
+    let hasAdultFemale = false;
 
     for (const entry of matchedEntries) {
       if (entry.jb_under_10) hasJbUnder10 = true;
       if (entry.jb_over_10) hasJbOver10 = true;
       if (entry.is_adult) hasAdult = true;
+      if (entry.gender === "Feminino" && entry.is_adult) hasAdultFemale = true;
     }
 
     return {
@@ -61,6 +63,7 @@ export function checkPhoneNumber(
       jb_over_10: hasJbOver10,
       is_adult: hasAdult,
       is_legal_representative: matchedEntries[0]!.is_legal_representative,
+      has_adult_female: hasAdultFemale,
     };
   }
 

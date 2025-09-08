@@ -21,10 +21,27 @@ type MinimalGroup = {
   announceGroup?: string | null;
 };
 
+export type RemoveSummary = {
+  totalRemoveQueueCount: number;
+  uniqueMembersAffected: number;
+  totalInactiveCount: number;
+  atleast1inactiveCount: number;
+  totalNotFoundCount: number;
+  atleast1notfoundCount: number;
+  totalJBOver10MJBCount: number;
+  atleast1JBOver10MJBCount: number;
+  totalJBUnder10JBCount: number;
+  atleast1JBUnder10JBCount: number;
+  totalJBInNonJBCount: number;
+  atleast1JBInNonJBCount: number;
+  dontRemoveInGroupsCount: number;
+  exceptionsInGroupsCount: number;
+};
+
 export async function removeMembersFromGroups(
   groups: MinimalGroup[],
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
-): Promise<void> {
+): Promise<RemoveSummary> {
   const queueItems: Array<{
     type: "remove";
     registration_id: number | null;
@@ -34,6 +51,21 @@ export async function removeMembersFromGroups(
     communityId?: string | null;
   }> = [];
 
+  // Summary accumulators
+  const uniquePhones = new Set<string>();
+  let totalInactiveCount = 0;
+  const uniqueInactive = new Set<string>();
+  let totalNotFoundCount = 0;
+  const uniqueNotFound = new Set<string>();
+  let totalJBOver10MJBCount = 0;
+  const uniqueJBOver10MJB = new Set<string>();
+  let totalJBUnder10JBCount = 0;
+  const uniqueJBUnder10JB = new Set<string>();
+  let totalJBInNonJBCount = 0;
+  const uniqueJBInNonJB = new Set<string>();
+  let dontRemoveInGroupsCount = 0;
+  let exceptionsInGroupsCount = 0;
+
   for (const group of groups) {
     try {
       const groupId = group.id;
@@ -41,18 +73,23 @@ export async function removeMembersFromGroups(
       const groupMembers = group.participants.map(extractPhoneFromParticipant).filter((x): x is string => Boolean(x));
 
       for (const member of groupMembers) {
+        if (dontRemove.includes(member)) dontRemoveInGroupsCount += 1;
+        if (exceptions.includes(member)) exceptionsInGroupsCount += 1;
+
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
 
-        // MB | Mulheres rule
-        if (checkResult.found && isMBMulheresGroup(groupName) && checkResult.gender === "Masculino") {
-          queueItems.push({
-            type: "remove",
-            registration_id: checkResult.mb!,
-            groupId,
-            phone: member,
-            reason: "Member is Masculine in a Feminine group.",
-          });
-          continue;
+        if (checkResult.found && isMBMulheresGroup(groupName)) {
+          if (!checkResult.has_adult_female && checkResult.gender === "Masculino") {
+            queueItems.push({
+              type: "remove",
+              registration_id: checkResult.mb!,
+              groupId,
+              phone: member,
+              reason: "Member is Masculine in a Feminine group.",
+            });
+            uniquePhones.add(member);
+            continue;
+          }
         }
 
         // Custom legal representative rule (R.JB | Familiares de JB 12+)
@@ -65,6 +102,7 @@ export async function removeMembersFromGroups(
             phone: member,
             reason: "Member is not legal representative of a 12+ years old member.",
           });
+          uniquePhones.add(member);
           continue;
         }
 
@@ -82,6 +120,9 @@ export async function removeMembersFromGroups(
                 phone: member,
                 reason: "User is JB under 10 in JB group",
               });
+              totalJBUnder10JBCount += 1;
+              uniqueJBUnder10JB.add(member);
+              uniquePhones.add(member);
             } else if (isMJBGroup(groupName) && checkResult.jb_over_10) {
               queueItems.push({
                 type: "remove",
@@ -90,6 +131,9 @@ export async function removeMembersFromGroups(
                 phone: member,
                 reason: "User is JB over 10 in M.JB group",
               });
+              totalJBOver10MJBCount += 1;
+              uniqueJBOver10MJB.add(member);
+              uniquePhones.add(member);
             } else if (
               isNonJBGroup(groupName, jbExceptionGroupNames) &&
               (checkResult.jb_under_10 || checkResult.jb_over_10)
@@ -101,6 +145,9 @@ export async function removeMembersFromGroups(
                 phone: member,
                 reason: "User is JB in non-JB group",
               });
+              totalJBInNonJBCount += 1;
+              uniqueJBInNonJB.add(member);
+              uniquePhones.add(member);
             }
           } else if (checkResult.status === "Inactive") {
             const shouldRemove = await triggerTwilioOrRemove(member, "mensa_inactive");
@@ -113,6 +160,9 @@ export async function removeMembersFromGroups(
                 reason: "Inactive",
                 communityId: group.announceGroup ?? null,
               });
+              totalInactiveCount += 1;
+              uniqueInactive.add(member);
+              uniquePhones.add(member);
             }
           }
         } else {
@@ -127,6 +177,9 @@ export async function removeMembersFromGroups(
                 reason: "Not found in DB",
                 communityId: group.announceGroup ?? null,
               });
+              totalNotFoundCount += 1;
+              uniqueNotFound.add(member);
+              uniquePhones.add(member);
             }
           }
         }
@@ -144,6 +197,22 @@ export async function removeMembersFromGroups(
     logger.error("Error adding remove requests to queue");
   }
   await disconnectRedis();
+  return {
+    totalRemoveQueueCount: queueItems.length,
+    uniqueMembersAffected: uniquePhones.size,
+    totalInactiveCount,
+    atleast1inactiveCount: uniqueInactive.size,
+    totalNotFoundCount,
+    atleast1notfoundCount: uniqueNotFound.size,
+    totalJBOver10MJBCount,
+    atleast1JBOver10MJBCount: uniqueJBOver10MJB.size,
+    totalJBUnder10JBCount,
+    atleast1JBUnder10JBCount: uniqueJBUnder10JB.size,
+    totalJBInNonJBCount,
+    atleast1JBInNonJBCount: uniqueJBInNonJB.size,
+    dontRemoveInGroupsCount,
+    exceptionsInGroupsCount,
+  };
 }
 
 export default { removeMembersFromGroups };
