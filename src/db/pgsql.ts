@@ -1,7 +1,7 @@
 import { config as configDotenv } from "dotenv";
 import { Pool } from "pg";
 import logger from "../utils/logger.js";
-import type { DBGroupRequest } from "../types/DBTypes.js";
+import type { DBGroupRequest, WhatsAppWorker } from "../types/DBTypes.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import type { WhatsappMessageRow } from "../types/DBTypes.js";
 
@@ -290,3 +290,12 @@ export async function insertNewWhatsAppMessages(messages: WhatsappMessageRow[]):
 }
 
 export default { getWhatsappQueue, closePool };
+
+/**
+ * Retrieves all WhatsApp workers (return only stable columns).
+ */
+export async function getAllWhatsAppWorkers(): Promise<WhatsAppWorker[]> {
+  const query = "SELECT id, worker_phone FROM whatsapp_workers;";
+  const { rows } = await getPool().query<WhatsAppWorker>(query);
+  return rows;
+}

@@ -133,3 +133,39 @@ Observações
 
 - O scan não utiliza o socket diretamente; usa conteúdo já trazido pelo orquestrador (Baileys) e o DB. O delay por grupo (`SCAN_DELAY`) ajuda a controlar o ritmo entre grupos.
 - Em caso de erro por grupo, o fluxo continua para o próximo (robustez por `try/catch`).
+
+**Tools**
+
+- Objetivo: utilitários de linha de comando para inspeção e operações pontuais via Baileys, fora do ciclo principal.
+
+- `tools:dump-groups`
+  - Caminho: `src/tools/dumpGroups.ts`
+  - Executa: `pnpm tools:dump-groups`
+  - O que faz:
+    - Abre sessão Baileys (QR no terminal, se necessário) e busca todos os grupos com `groupFetchAllParticipating()`.
+    - Gera dois arquivos em `tools_results/`:
+      - `groups_dump_<timestamp>.json`: dump completo dos metadados retornados pelo Baileys.
+      - `groups_summary_<timestamp>.json`: resumo com totais (comunidades, announces, admin, addressingMode, classificação por nome) e lista de comunidades (id, subject, contagem de subgrupos).
+  - Requisitos:
+    - Sessão válida em `./auth` (ou escaneie o QR exibido).
+    - `.env` para nível de log do Baileys opcional (`BAILEYS_LOG_LEVEL`).
+
+- `tools:add-worker`
+  - Caminho: `src/tools/addNewWorker.ts`
+  - Executa: `pnpm tools:add-worker -- --worker <telefone>`
+    - Exemplo dry-run: `pnpm tools:add-worker -- --worker 5511999999999 --dry-run`
+  - O que faz (estado atual):
+    - Valida o telefone do worker na tabela `whatsapp_workers` usando `getAllWhatsAppWorkers()`.
+    - Conecta via Baileys e identifica todas as comunidades e seus grupos de avisos (`isCommunityAnnounce = true`).
+    - Para cada grupo de avisos:
+      - Verifica se o worker já é membro; se sim, marca como `already` e não tenta adicionar.
+      - Tenta adicionar o worker somente se o bot tiver permissão (admin/superadmin) no próprio grupo de avisos ou na comunidade.
+      - Aplica delay aleatório entre 0 e 120 segundos entre adições (`delaySecs`).
+    - Não realiza promoção a admin (função removida por limitações e erros 400/bad-request observados).
+    - Salva relatório detalhado em `tools_results/add_worker_<telefone>_<timestamp>.json` com por-comunidade e por-grupo de avisos.
+  - Requisitos:
+    - Sessão válida em `./auth` (QR no terminal, se necessário).
+    - `.env` com Postgres configurado (consulta de `whatsapp_workers`).
+  - Observações:
+    - Operação limitada a grupos de avisos; não tenta adicionar na comunidade.
+    - Campos do relatório por grupo: `action` ∈ `already|dry-run-add|added|failed|skipped` e `error` opcional.

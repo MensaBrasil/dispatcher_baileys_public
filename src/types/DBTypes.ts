@@ -18,3 +18,8 @@ export interface WhatsappMessageRow {
   device_type: string;
   content: string | null;
 }
+
+export interface WhatsAppWorker {
+  id: number;
+  worker_phone: string;
+}
