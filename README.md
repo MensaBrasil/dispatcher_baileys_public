@@ -20,6 +20,7 @@ Ambiente (variáveis relevantes)
 - `CYCLE_JITTER_SECONDS` (padrão: 0): jitter aleatório em segundos somado/subtraído do intervalo para evitar padrões.
 - `ACTION_DELAY_MIN` (padrão: 1), `ACTION_DELAY_MAX` (padrão: 3), `ACTION_DELAY_JITTER` (padrão: 0.5): atraso aleatório entre tarefas.
 - `ENABLE_SCAN` (padrão: false): habilita tarefa de scan quando nenhuma flag é passada.
+- `WPP_STORE_GROUP_MESSAGE_CONTENT` (padrão: false): quando `true`, armazena o conteúdo textual das mensagens de grupos no banco de dados.
 - Credenciais de Postgres e Redis: ver `.env.example`.
 
 addTask — addMembersToGroups(groups)

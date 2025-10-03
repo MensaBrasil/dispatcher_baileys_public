@@ -11,6 +11,8 @@ configDotenv({ path: ".env" });
 
 type AllowedGroup = { id: string; name: string };
 
+const storeGroupMessageContent = process.env.WPP_STORE_GROUP_MESSAGE_CONTENT === "true";
+
 function extractPhoneFromJid(jid?: string | null): string | null {
   if (!jid) return null;
   const [user] = jid.split("@");
@@ -143,7 +145,7 @@ export function createMessageProcessor(
         }
         const message_type = getContentType(m.message ?? undefined) || "unknown";
         const device_type = getDevice(m.key.id ?? "") || "unknown";
-        const content = extractTextContent(m);
+        const content = storeGroupMessageContent ? extractTextContent(m) : null;
 
         const row: WhatsappMessageRow = {
           message_id,
