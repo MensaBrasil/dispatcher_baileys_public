@@ -1,3 +1,4 @@
+
 export type Gender = "Masculino" | "Feminino";
 
 export interface PhoneNumberStatusRow {
@@ -7,6 +8,7 @@ export interface PhoneNumberStatusRow {
   status: "Active" | "Inactive";
   jb_under_10: boolean;
   jb_over_10: boolean;
+  jb_over_12: boolean;
   is_adult: boolean;
   is_legal_representative: boolean;
 }
@@ -18,7 +20,10 @@ export interface PhoneCheckResult {
   gender?: Gender;
   jb_under_10?: boolean;
   jb_over_10?: boolean;
+  jb_over_12?: boolean;
   is_adult?: boolean;
   is_legal_representative?: boolean;
+  represents_jb_over_12?: boolean;
   has_adult_female?: boolean;
+  represents_minor?: boolean;
 }

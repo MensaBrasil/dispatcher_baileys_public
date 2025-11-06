@@ -70,8 +70,10 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
         END AS status,
         CASE WHEN DATE_PART('year', AGE(r.birth_date)) <= 11 THEN TRUE ELSE FALSE END AS jb_under_10,
         CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 10 AND DATE_PART('year', AGE(r.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_10,
+        CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 12 AND DATE_PART('year', AGE(r.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_12,
         CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
-        FALSE AS is_legal_representative
+        FALSE AS is_legal_representative,
+        FALSE AS represents_minor              -- NEW: members themselves don't represent a minor
       FROM phones p
       LEFT JOIN MaxExpirationDates med ON p.registration_id = med.registration_id
       LEFT JOIN registration r ON p.registration_id = r.registration_id
@@ -88,8 +90,13 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
         END AS status,
         CASE WHEN DATE_PART('year', AGE(reg.birth_date)) <= 11 THEN TRUE ELSE FALSE END AS jb_under_10,
         CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 10 AND DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_10,
+        CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 12 AND DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_12,
         CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
-        TRUE AS is_legal_representative
+        TRUE AS is_legal_representative,
+        CASE                                            -- NEW: legal rep represents a minor iff represented child < 18
+          WHEN DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE
+          ELSE FALSE
+        END AS represents_minor
       FROM legal_representatives lr
       LEFT JOIN MaxExpirationDates med ON lr.registration_id = med.registration_id
       LEFT JOIN registration reg ON lr.registration_id = reg.registration_id
@@ -102,8 +109,10 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       MAX(status) AS status,
       BOOL_OR(jb_under_10) AS jb_under_10,
       BOOL_OR(jb_over_10) AS jb_over_10,
+      BOOL_OR(jb_over_12) AS jb_over_12,
       BOOL_OR(is_adult) AS is_adult,
-      BOOL_OR(is_legal_representative) AS is_legal_representative
+      BOOL_OR(is_legal_representative) AS is_legal_representative,
+      BOOL_OR(represents_minor) AS represents_minor   -- NEW: surfaced to callers
     FROM PhoneNumbers
     WHERE phone_number IS NOT NULL
     GROUP BY phone_number, registration_id, gender

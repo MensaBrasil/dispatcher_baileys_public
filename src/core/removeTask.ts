@@ -2,7 +2,14 @@ import { config as configDotenv } from "dotenv";
 import logger from "../utils/logger.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { triggerTwilioOrRemove } from "../utils/twilio.js";
-import { isRegularJBGroup, isMJBGroup, isNonJBGroup, isAJBGroup, isMBMulheresGroup } from "../utils/checkGroupType.js";
+import {
+  isRegularJBGroup,
+  isMJBGroup,
+  isNonJBGroup,
+  isAJBGroup,
+  isMBMulheresGroup,
+  isRJBGroup,
+} from "../utils/checkGroupType.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
 import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
@@ -92,18 +99,52 @@ export async function removeMembersFromGroups(
           }
         }
 
-        // Custom legal representative rule (R.JB | Familiares de JB 12+)
-        if (checkResult.found && groupName === "R.JB | Familiares de JB 12+" && !checkResult.is_legal_representative) {
-          // Without DB helper check here; this replicates minimum rule that non-legal reps are removed
-          queueItems.push({
-            type: "remove",
-            registration_id: checkResult.mb!,
-            groupId,
-            phone: member,
-            reason: "Member is not legal representative of a 12+ years old member.",
-          });
-          uniquePhones.add(member);
-          continue;
+        if (checkResult.found && isRJBGroup(groupName)) {
+          if (groupName === "R.JB | Familiares de JB 12+") {
+            if (checkResult.is_adult && (!checkResult.is_legal_representative || !checkResult.represents_jb_over_12)) {
+              queueItems.push({
+                type: "remove",
+                registration_id: checkResult.mb!,
+                groupId,
+                phone: member,
+                reason: "Member is not legal representative of a 12+ years old member.",
+              });
+              uniquePhones.add(member);
+              continue;
+            }
+
+            if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
+              queueItems.push({
+                type: "remove",
+                registration_id: checkResult.mb!,
+                groupId,
+                phone: member,
+                reason: "Legal representative no longer represents a minor (child is 18+).",
+              });
+              uniquePhones.add(member);
+              continue;
+            }
+          } else if (checkResult.is_adult && !checkResult.is_legal_representative) {
+            queueItems.push({
+              type: "remove",
+              registration_id: checkResult.mb!,
+              groupId,
+              phone: member,
+              reason: "Adult is not a legal representative in R.JB community.",
+            });
+            uniquePhones.add(member);
+            continue;
+          } else if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
+            queueItems.push({
+              type: "remove",
+              registration_id: checkResult.mb!,
+              groupId,
+              phone: member,
+              reason: "Legal representative no longer represents a minor (child is 18+).",
+            });
+            uniquePhones.add(member);
+            continue;
+          }
         }
 
         if (checkResult.found) {
