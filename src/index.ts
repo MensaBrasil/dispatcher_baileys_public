@@ -191,14 +191,10 @@ async function main() {
 
         // Render console summary
         // Header
-
         logger.info("\n\x1b[1m=== REMOVAL REPORT SUMMARY ===\x1b[0m");
         // High-level counts
-
         logger.info(`\x1b[36mTotal groups: ${totalGroupsAll}\x1b[0m`);
-
         logger.info(`\x1b[36mTotal groups processed: ${mensaAdminGroups.length}\x1b[0m`);
-
         logger.info(`\x1b[31mBot is not admin in: ${notAdminCount} groups\x1b[0m\n`);
 
         // Members by issue
@@ -222,7 +218,12 @@ async function main() {
           logger.info(
             `• JB under 10 in JB: ${removeSummary.atleast1JBUnder10JBCount} members (${removeSummary.totalJBUnder10JBCount} total occurrences)`,
           );
-
+          logger.info(
+            `• Adult not legal representative in R.JB: ${removeSummary.atleast1NonLegalRepCount} members (${removeSummary.totalNonLegalRepCount} total occurrences)`,
+          );
+          logger.info(
+            `• Legal rep no longer represents a minor (18+): ${removeSummary.atleast1NoLongerRepMinorCount} members (${removeSummary.totalNoLongerRepMinorCount} total occurrences)`,
+          );
           logger.info(
             `• JB in non-JB: ${removeSummary.atleast1JBInNonJBCount} members (${removeSummary.totalJBInNonJBCount} total occurrences)\x1b[0m\n`,
           );
@@ -235,7 +236,6 @@ async function main() {
         logger.info("\x1b[1mPending Additions:\x1b[0m");
         if (addSummary) {
           logger.info(`\x1b[32m• Members awaiting addition: ${addSummary.atleast1PendingAdditionsCount}`);
-
           logger.info(`• Total pending additions: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
         } else {
           logger.info("\x1b[32m• Add task disabled this cycle\x1b[0m\n");

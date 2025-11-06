@@ -43,6 +43,10 @@ export type RemoveSummary = {
   atleast1JBInNonJBCount: number;
   dontRemoveInGroupsCount: number;
   exceptionsInGroupsCount: number;
+  totalNoLongerRepMinorCount: number;
+  atleast1NoLongerRepMinorCount: number;
+  totalNonLegalRepCount: number;
+  atleast1NonLegalRepCount: number;
 };
 
 export async function removeMembersFromGroups(
@@ -72,6 +76,10 @@ export async function removeMembersFromGroups(
   const uniqueJBInNonJB = new Set<string>();
   let dontRemoveInGroupsCount = 0;
   let exceptionsInGroupsCount = 0;
+  let totalNoLongerRepMinorCount = 0;
+  const uniqueNoLongerRepMinor = new Set<string>();
+  let totalNonLegalRepCount = 0;
+  const uniqueNonLegalRep = new Set<string>();
 
   for (const group of groups) {
     try {
@@ -109,6 +117,10 @@ export async function removeMembersFromGroups(
                 phone: member,
                 reason: "Member is not legal representative of a 12+ years old member.",
               });
+              if (!checkResult.is_legal_representative) {
+                totalNonLegalRepCount += 1;
+                uniqueNonLegalRep.add(member);
+              }
               uniquePhones.add(member);
               continue;
             }
@@ -121,6 +133,8 @@ export async function removeMembersFromGroups(
                 phone: member,
                 reason: "Legal representative no longer represents a minor (child is 18+).",
               });
+              totalNoLongerRepMinorCount += 1;
+              uniqueNoLongerRepMinor.add(member);
               uniquePhones.add(member);
               continue;
             }
@@ -132,6 +146,8 @@ export async function removeMembersFromGroups(
               phone: member,
               reason: "Adult is not a legal representative in R.JB community.",
             });
+            totalNonLegalRepCount += 1;
+            uniqueNonLegalRep.add(member);
             uniquePhones.add(member);
             continue;
           } else if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
@@ -142,6 +158,8 @@ export async function removeMembersFromGroups(
               phone: member,
               reason: "Legal representative no longer represents a minor (child is 18+).",
             });
+            totalNoLongerRepMinorCount += 1;
+            uniqueNoLongerRepMinor.add(member);
             uniquePhones.add(member);
             continue;
           }
@@ -253,6 +271,10 @@ export async function removeMembersFromGroups(
     atleast1JBInNonJBCount: uniqueJBInNonJB.size,
     dontRemoveInGroupsCount,
     exceptionsInGroupsCount,
+    totalNoLongerRepMinorCount,
+    atleast1NoLongerRepMinorCount: uniqueNoLongerRepMinor.size,
+    totalNonLegalRepCount,
+    atleast1NonLegalRepCount: uniqueNonLegalRep.size,
   };
 }
 
