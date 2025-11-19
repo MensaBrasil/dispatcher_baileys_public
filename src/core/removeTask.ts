@@ -47,6 +47,8 @@ export type RemoveSummary = {
   atleast1NoLongerRepMinorCount: number;
   totalNonLegalRepCount: number;
   atleast1NonLegalRepCount: number;
+  totalUnderageWithoutLegalRepCount: number;
+  atleast1UnderageWithoutLegalRepCount: number;
 };
 
 export async function removeMembersFromGroups(
@@ -80,6 +82,8 @@ export async function removeMembersFromGroups(
   const uniqueNoLongerRepMinor = new Set<string>();
   let totalNonLegalRepCount = 0;
   const uniqueNonLegalRep = new Set<string>();
+  let totalUnderageWithoutLegalRepCount = 0;
+  const uniqueUnderageWithoutLegalRep = new Set<string>();
 
   for (const group of groups) {
     try {
@@ -163,6 +167,24 @@ export async function removeMembersFromGroups(
             uniquePhones.add(member);
             continue;
           }
+        }
+
+        if (checkResult.found && 
+            isRJBGroup(groupName) &&
+            !checkResult.is_adult && 
+            (checkResult.jb_under_10 || checkResult.jb_over_10 || checkResult.jb_over_12) &&
+            !checkResult.has_legal_representative) {
+          queueItems.push({
+            type: "remove",
+            registration_id: checkResult.mb!,
+            groupId,
+            phone: member,
+            reason: "Underage member without legal representatives in R.JB group",
+            communityId: group.announceGroup ?? null,
+          });
+          totalUnderageWithoutLegalRepCount += 1;
+          uniqueUnderageWithoutLegalRep.add(member);
+          uniquePhones.add(member);
         }
 
         if (checkResult.found) {
@@ -275,6 +297,8 @@ export async function removeMembersFromGroups(
     atleast1NoLongerRepMinorCount: uniqueNoLongerRepMinor.size,
     totalNonLegalRepCount,
     atleast1NonLegalRepCount: uniqueNonLegalRep.size,
+    totalUnderageWithoutLegalRepCount,
+    atleast1UnderageWithoutLegalRepCount: uniqueUnderageWithoutLegalRep.size,
   };
 }
 
