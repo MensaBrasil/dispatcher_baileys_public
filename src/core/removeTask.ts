@@ -179,7 +179,7 @@ export async function removeMembersFromGroups(
             registration_id: checkResult.mb!,
             groupId,
             phone: member,
-            reason: "Child's phone doesn't match legal representative's phone in R.JB group";
+            reason: "Child's phone doesn't match legal representative's phone in R.JB group",
             communityId: group.announceGroup ?? null,
           });
           totalChildPhoneMismatchCount += 1;
