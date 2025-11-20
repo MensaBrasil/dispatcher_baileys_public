@@ -47,8 +47,8 @@ export type RemoveSummary = {
   atleast1NoLongerRepMinorCount: number;
   totalNonLegalRepCount: number;
   atleast1NonLegalRepCount: number;
-  totalUnderageWithoutLegalRepCount: number;
-  atleast1UnderageWithoutLegalRepCount: number;
+  totalChildPhoneMismatchCount: number;
+  atleast1ChildPhoneMismatchCount: number;
 };
 
 export async function removeMembersFromGroups(
@@ -82,8 +82,8 @@ export async function removeMembersFromGroups(
   const uniqueNoLongerRepMinor = new Set<string>();
   let totalNonLegalRepCount = 0;
   const uniqueNonLegalRep = new Set<string>();
-  let totalUnderageWithoutLegalRepCount = 0;
-  const uniqueUnderageWithoutLegalRep = new Set<string>();
+  let totalChildPhoneMismatchCount = 0;
+  const uniqueChildPhoneMismatch = new Set<string>();
 
   for (const group of groups) {
     try {
@@ -173,17 +173,17 @@ export async function removeMembersFromGroups(
             isRJBGroup(groupName) &&
             !checkResult.is_adult && 
             (checkResult.jb_under_10 || checkResult.jb_over_10 || checkResult.jb_over_12) &&
-            !checkResult.has_legal_representative) {
+            !checkResult.child_phone_matches_legal_rep) {
           queueItems.push({
             type: "remove",
             registration_id: checkResult.mb!,
             groupId,
             phone: member,
-            reason: "Underage member without legal representatives in R.JB group",
+            reason: "Child's phone doesn't match legal representative's phone in R.JB group";
             communityId: group.announceGroup ?? null,
           });
-          totalUnderageWithoutLegalRepCount += 1;
-          uniqueUnderageWithoutLegalRep.add(member);
+          totalChildPhoneMismatchCount += 1;
+          uniqueChildPhoneMismatch.add(member);
           uniquePhones.add(member);
         }
 
@@ -297,8 +297,8 @@ export async function removeMembersFromGroups(
     atleast1NoLongerRepMinorCount: uniqueNoLongerRepMinor.size,
     totalNonLegalRepCount,
     atleast1NonLegalRepCount: uniqueNonLegalRep.size,
-    totalUnderageWithoutLegalRepCount,
-    atleast1UnderageWithoutLegalRepCount: uniqueUnderageWithoutLegalRep.size,
+    totalChildPhoneMismatchCount,
+    atleast1ChildPhoneMismatchCount: uniqueChildPhoneMismatch.size,
   };
 }
 

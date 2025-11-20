@@ -225,7 +225,7 @@ async function main() {
             `• Legal rep no longer represents a minor (18+): ${removeSummary.atleast1NoLongerRepMinorCount} members (${removeSummary.totalNoLongerRepMinorCount} total occurrences)`,
           );
           logger.info(
-            `• Underage without legal representatives in R.JB: ${removeSummary.atleast1UnderageWithoutLegalRepCount} members (${removeSummary.totalUnderageWithoutLegalRepCount} total occurrences)`,
+            `• Children without matching legal rep phones in R.JB: ${removeSummary.atleast1ChildPhoneMismatchCount} members (${removeSummary.totalChildPhoneMismatchCount} total occurrences)`,
           );
           logger.info(
             `• JB in non-JB: ${removeSummary.atleast1JBInNonJBCount} members (${removeSummary.totalJBInNonJBCount} total occurrences)\x1b[0m\n`,

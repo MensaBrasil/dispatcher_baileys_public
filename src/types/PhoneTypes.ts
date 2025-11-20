@@ -11,7 +11,7 @@ export interface PhoneNumberStatusRow {
   jb_over_12: boolean;
   is_adult: boolean;
   is_legal_representative: boolean;
-  has_legal_representative: boolean;
+  child_phone_matches_legal_rep: boolean;
 }
 
 export interface PhoneCheckResult {
@@ -27,5 +27,5 @@ export interface PhoneCheckResult {
   represents_jb_over_12?: boolean;
   has_adult_female?: boolean;
   represents_minor?: boolean;
-  has_legal_representative?: boolean;
+  child_phone_matches_legal_rep?: boolean;
 }

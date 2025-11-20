@@ -50,7 +50,7 @@ export function checkPhoneNumber(
     let isLegalRepresentative = false;
     let representsJbOver12 = false;
     let representsMinor = false; 
-    let hasLegalRepresentative = false;
+    let childPhoneMatchesLegalRep = true; 
 
     for (const entry of matchedEntries) {
       if (entry.jb_under_10) hasJbUnder10 = true;
@@ -58,7 +58,7 @@ export function checkPhoneNumber(
       if (entry.jb_over_12) hasJbOver12 = true;
       if (entry.is_adult) hasAdult = true;
       if (entry.gender === "Feminino" && entry.is_adult) hasAdultFemale = true;
-      if (entry.has_legal_representative) hasLegalRepresentative = true;
+      if (!entry.child_phone_matches_legal_rep) childPhoneMatchesLegalRep = false;
       if (entry.is_legal_representative) {
         isLegalRepresentative = true;
         if (entry.jb_over_12) representsJbOver12 = true;
@@ -79,7 +79,7 @@ export function checkPhoneNumber(
       represents_jb_over_12: representsJbOver12,
       represents_minor: representsMinor,
       has_adult_female: hasAdultFemale,
-      has_legal_representative: hasLegalRepresentative,
+      child_phone_matches_legal_rep: childPhoneMatchesLegalRep,
     };
   }
 
