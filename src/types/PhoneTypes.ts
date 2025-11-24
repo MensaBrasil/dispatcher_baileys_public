@@ -1,4 +1,3 @@
-
 export type Gender = "Masculino" | "Feminino";
 
 export interface PhoneNumberStatusRow {

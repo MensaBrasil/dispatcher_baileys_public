@@ -49,8 +49,8 @@ export function checkPhoneNumber(
     let hasAdultFemale = false;
     let isLegalRepresentative = false;
     let representsJbOver12 = false;
-    let representsMinor = false; 
-    let childPhoneMatchesLegalRep = true; 
+    let representsMinor = false;
+    let childPhoneMatchesLegalRep = true;
 
     for (const entry of matchedEntries) {
       if (entry.jb_under_10) hasJbUnder10 = true;
@@ -62,7 +62,7 @@ export function checkPhoneNumber(
       if (entry.is_legal_representative) {
         isLegalRepresentative = true;
         if (entry.jb_over_12) representsJbOver12 = true;
-        if (entry.jb_under_10 || entry.jb_over_10) representsMinor = true; 
+        if (entry.jb_under_10 || entry.jb_over_10) representsMinor = true;
       }
     }
 

@@ -8,9 +8,11 @@ export type MinimalGroup = {
   name?: string;
   participants: BaileysParticipant[];
   announceGroup?: string | null;
+  linkedParent?: string | null;
   addressingMode?: "pn" | "lid" | string | null;
   isCommunity?: boolean;
   isCommunityAnnounce?: boolean;
+  isAdmin?: boolean;
 };
 
 function hasJid(x: unknown): x is { jid?: string } {
@@ -36,8 +38,8 @@ function isAdminForMe(participants: BaileysParticipant[], socketMeJid: string | 
 /**
  * Processes Baileys groups to categorize and select admin-managed groups.
  * - Filters to groups where the bot is an admin (to avoid LIDs-only visibility)
- * - Returns a normalized MinimalGroup list and the subset adminGroups
- * - Optionally could map announce/communities in the future; for now announceGroup is null
+ * - Returns normalized lists for regular, community, and announce groups, plus the admin subsets
+ * - Maps announce/linked parent (community id) into announceGroup for downstream removal context
  */
 export async function processGroupsBaileys(
   sock: WASocket,
@@ -47,6 +49,8 @@ export async function processGroupsBaileys(
   adminGroups: MinimalGroup[];
   community: MinimalGroup[];
   communityAnnounce: MinimalGroup[];
+  adminCommunity: MinimalGroup[];
+  adminCommunityAnnounce: MinimalGroup[];
 }> {
   const all = await sock.groupFetchAllParticipating();
   const allGroups = Object.values(all);
@@ -62,12 +66,24 @@ export async function processGroupsBaileys(
     name: g.subject,
     participants: g.participants as unknown as BaileysParticipant[],
     announceGroup: null,
+    linkedParent: g.linkedParent ?? null,
     addressingMode: g.addressingMode ?? null,
     isCommunity: Boolean(g.isCommunity),
     isCommunityAnnounce: Boolean(g.isCommunityAnnounce),
+    isAdmin: false,
   }));
 
+  // Map comunidade -> grupo de anúncios correspondente
+  const announceByCommunity = new Map<string, string>();
+  for (const group of normalized) {
+    if (group.isCommunityAnnounce && group.linkedParent) {
+      announceByCommunity.set(group.linkedParent, group.id);
+    }
+  }
+
   const adminGroups: MinimalGroup[] = [];
+  const adminCommunity: MinimalGroup[] = [];
+  const adminCommunityAnnounce: MinimalGroup[] = [];
   const community: MinimalGroup[] = [];
   const communityAnnounce: MinimalGroup[] = [];
   const groups: MinimalGroup[] = [];
@@ -80,16 +96,29 @@ export async function processGroupsBaileys(
     const isAdmin = isAdminForMe(group.participants, meJid);
     const isComm = Boolean(group.isCommunity);
     const isCommAnn = Boolean(group.isCommunityAnnounce);
-    // Include non-community announce groups into regular groups as requested
+    group.isAdmin = isAdmin;
+    // Aponta sempre para o grupo de anúncios da comunidade
+    if (isCommAnn) {
+      group.announceGroup = group.id;
+    } else if (group.linkedParent) {
+      group.announceGroup = announceByCommunity.get(group.linkedParent) ?? null;
+    } else {
+      group.announceGroup = null;
+    }
+    // Classify into regular/community/announce buckets
     if (isComm) community.push(group);
     else if (isCommAnn) communityAnnounce.push(group);
     else groups.push(group);
 
-    if (!isComm && !isCommAnn && isAdmin) adminGroups.push(group);
+    if (isAdmin) {
+      if (isComm) adminCommunity.push(group);
+      else if (isCommAnn) adminCommunityAnnounce.push(group);
+      else adminGroups.push(group);
+    }
   }
 
   // Return full classification
-  return { groups, adminGroups, community, communityAnnounce };
+  return { groups, adminGroups, community, communityAnnounce, adminCommunity, adminCommunityAnnounce };
 }
 
 export default { processGroupsBaileys };

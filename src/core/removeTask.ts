@@ -169,11 +169,13 @@ export async function removeMembersFromGroups(
           }
         }
 
-        if (checkResult.found && 
-            isRJBGroup(groupName) &&
-            !checkResult.is_adult && 
-            (checkResult.jb_under_10 || checkResult.jb_over_10 || checkResult.jb_over_12) &&
-            !checkResult.child_phone_matches_legal_rep) {
+        if (
+          checkResult.found &&
+          isRJBGroup(groupName) &&
+          !checkResult.is_adult &&
+          (checkResult.jb_under_10 || checkResult.jb_over_10 || checkResult.jb_over_12) &&
+          !checkResult.child_phone_matches_legal_rep
+        ) {
           queueItems.push({
             type: "remove",
             registration_id: checkResult.mb!,

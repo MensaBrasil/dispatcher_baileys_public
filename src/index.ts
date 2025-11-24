@@ -99,10 +99,16 @@ async function main() {
       }
       isCycleRunning = true;
       // Fetch and classify groups using Baileys
-      const { groups, adminGroups, community, communityAnnounce } = await processGroupsBaileys(sock);
+      const { groups, adminGroups, community, communityAnnounce, adminCommunity, adminCommunityAnnounce } =
+        await processGroupsBaileys(sock);
       // Filter out OrgMB groups only (keep all others) and then apply Mensa classification for message history
       const adminNonOrg = adminGroups.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
+      const communityAdminNonOrg = adminCommunity.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
+      const communityAnnounceAdminNonOrg = adminCommunityAnnounce.filter(
+        (g) => !isOrgMBGroup(g.subject ?? g.name ?? ""),
+      );
       const mensaAdminGroups = adminNonOrg;
+      const removalGroups = [...adminNonOrg, ...communityAdminNonOrg, ...communityAnnounceAdminNonOrg];
 
       // Build allowed groups for message sync (Mensa groups except OrgMB)
       try {
@@ -143,7 +149,7 @@ async function main() {
       // 3) Remove task
       let removeSummary: RemoveSummary | undefined;
       if (runRemove && phoneMap) {
-        removeSummary = await removeMembersFromGroups(mensaAdminGroups, phoneMap);
+        removeSummary = await removeMembersFromGroups(removalGroups, phoneMap);
       }
 
       if (runRemove && (runScan || false)) {
@@ -176,6 +182,7 @@ async function main() {
       try {
         const totalGroupsAll = groups.length + community.length + communityAnnounce.length;
         const notAdminCount = Math.max(0, groups.length - adminGroups.length);
+        const removalGroupsProcessed = removalGroups.length;
         const addQueueLength = await getQueueLength("addQueue");
         const removeQueueLength = await getQueueLength("removeQueue");
 
@@ -183,6 +190,7 @@ async function main() {
           totalGroupsAll,
           nonCommunityGroups: groups.length,
           adminGroupsProcessed: mensaAdminGroups.length,
+          removalGroupsProcessed,
           notAdminCount,
           addSummary,
           removeSummary,
@@ -194,7 +202,8 @@ async function main() {
         logger.info("\n\x1b[1m=== REMOVAL REPORT SUMMARY ===\x1b[0m");
         // High-level counts
         logger.info(`\x1b[36mTotal groups: ${totalGroupsAll}\x1b[0m`);
-        logger.info(`\x1b[36mTotal groups processed: ${mensaAdminGroups.length}\x1b[0m`);
+        logger.info(`\x1b[36mTotal groups processed (add/scan): ${mensaAdminGroups.length}\x1b[0m`);
+        logger.info(`\x1b[36mTotal groups processed for removal (incl. community): ${removalGroupsProcessed}\x1b[0m`);
         logger.info(`\x1b[31mBot is not admin in: ${notAdminCount} groups\x1b[0m\n`);
 
         // Members by issue
