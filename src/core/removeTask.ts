@@ -54,18 +54,20 @@ export type RemoveSummary = {
   atleast1ChildPhoneMismatchCount: number;
 };
 
+type RemovalQueueItem = {
+  type: "remove";
+  registration_id: number | null;
+  groupId: string;
+  phone: string;
+  reason: string;
+  communityId?: string | null;
+};
+
 export async function removeMembersFromGroups(
   groups: MinimalGroup[],
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
 ): Promise<RemoveSummary> {
-  const queueItems: Array<{
-    type: "remove";
-    registration_id: number | null;
-    groupId: string;
-    phone: string;
-    reason: string;
-    communityId?: string | null;
-  }> = [];
+  const queueItems: RemovalQueueItem[] = [];
 
   // Summary accumulators
   const uniquePhones = new Set<string>();
@@ -92,6 +94,8 @@ export async function removeMembersFromGroups(
     try {
       const groupId = group.id;
       const groupName = group.subject ?? group.name ?? "";
+      const communityId = group.announceGroup ?? null;
+      const pushRemoval = (item: Omit<RemovalQueueItem, "communityId">) => queueItems.push({ ...item, communityId });
       for (const participant of group.participants) {
         if (isParticipantAdmin(participant)) continue;
 
@@ -105,7 +109,7 @@ export async function removeMembersFromGroups(
 
         if (checkResult.found && isMBMulheresGroup(groupName)) {
           if (!checkResult.has_adult_female && checkResult.gender === "Masculino") {
-            queueItems.push({
+            pushRemoval({
               type: "remove",
               registration_id: checkResult.mb!,
               groupId,
@@ -120,7 +124,7 @@ export async function removeMembersFromGroups(
         if (checkResult.found && isRJBGroup(groupName)) {
           if (groupName === "R.JB | Familiares de JB 12+") {
             if (checkResult.is_adult && (!checkResult.is_legal_representative || !checkResult.represents_jb_over_12)) {
-              queueItems.push({
+              pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
@@ -136,7 +140,7 @@ export async function removeMembersFromGroups(
             }
 
             if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
-              queueItems.push({
+              pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
@@ -149,7 +153,7 @@ export async function removeMembersFromGroups(
               continue;
             }
           } else if (checkResult.is_adult && !checkResult.is_legal_representative) {
-            queueItems.push({
+            pushRemoval({
               type: "remove",
               registration_id: checkResult.mb!,
               groupId,
@@ -161,7 +165,7 @@ export async function removeMembersFromGroups(
             uniquePhones.add(member);
             continue;
           } else if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
-            queueItems.push({
+            pushRemoval({
               type: "remove",
               registration_id: checkResult.mb!,
               groupId,
@@ -182,13 +186,12 @@ export async function removeMembersFromGroups(
           (checkResult.jb_under_10 || checkResult.jb_over_10 || checkResult.jb_over_12) &&
           !checkResult.child_phone_matches_legal_rep
         ) {
-          queueItems.push({
+          pushRemoval({
             type: "remove",
             registration_id: checkResult.mb!,
             groupId,
             phone: member,
             reason: "Child's phone doesn't match legal representative's phone in R.JB group",
-            communityId: group.announceGroup ?? null,
           });
           totalChildPhoneMismatchCount += 1;
           uniqueChildPhoneMismatch.add(member);
@@ -202,7 +205,7 @@ export async function removeMembersFromGroups(
             !isAJBGroup(groupName)
           ) {
             if (isRegularJBGroup(groupName) && checkResult.jb_under_10) {
-              queueItems.push({
+              pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
@@ -213,7 +216,7 @@ export async function removeMembersFromGroups(
               uniqueJBUnder10JB.add(member);
               uniquePhones.add(member);
             } else if (isMJBGroup(groupName) && checkResult.jb_over_10) {
-              queueItems.push({
+              pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
@@ -227,7 +230,7 @@ export async function removeMembersFromGroups(
               isNonJBGroup(groupName, jbExceptionGroupNames) &&
               (checkResult.jb_under_10 || checkResult.jb_over_10)
             ) {
-              queueItems.push({
+              pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
@@ -241,13 +244,12 @@ export async function removeMembersFromGroups(
           } else if (checkResult.status === "Inactive") {
             const shouldRemove = await triggerTwilioOrRemove(member, "mensa_inactive");
             if (shouldRemove) {
-              queueItems.push({
+              pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
                 phone: member,
                 reason: "Inactive",
-                communityId: group.announceGroup ?? null,
               });
               totalInactiveCount += 1;
               uniqueInactive.add(member);
@@ -258,14 +260,7 @@ export async function removeMembersFromGroups(
           if (!dontRemove.includes(member)) {
             const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
             if (shouldRemove) {
-              queueItems.push({
-                type: "remove",
-                registration_id: null,
-                groupId,
-                phone: member,
-                reason: "Not found in DB",
-                communityId: group.announceGroup ?? null,
-              });
+              pushRemoval({ type: "remove", registration_id: null, groupId, phone: member, reason: "Not found in DB" });
               totalNotFoundCount += 1;
               uniqueNotFound.add(member);
               uniquePhones.add(member);
