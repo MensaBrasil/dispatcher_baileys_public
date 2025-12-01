@@ -12,7 +12,8 @@ import {
 } from "../utils/checkGroupType.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
-import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
+import { extractPhoneFromParticipant } from "../utils/jid.js";
+import type { MinimalGroup } from "../utils/groups.js";
 
 configDotenv({ path: ".env" });
 
@@ -20,13 +21,15 @@ const dontRemove = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boo
 const exceptions = (process.env.EXCEPTIONS ?? "").split(",").filter(Boolean);
 const jbExceptionGroupNames = ["MB | N-SIGs Mensa Brasil", "MB | Xadrez"]; // legacy exceptions
 
-type MinimalGroup = {
-  id: string;
-  subject?: string;
-  name?: string;
-  participants: JidParticipant[];
-  announceGroup?: string | null;
-};
+type GroupParticipant = MinimalGroup["participants"][number];
+
+function isParticipantAdmin(participant: GroupParticipant): boolean {
+  if (participant && typeof participant === "object" && "admin" in participant) {
+    const role = (participant as { admin?: unknown }).admin;
+    return role === "admin" || role === "superadmin";
+  }
+  return false;
+}
 
 export type RemoveSummary = {
   totalRemoveQueueCount: number;
@@ -89,9 +92,12 @@ export async function removeMembersFromGroups(
     try {
       const groupId = group.id;
       const groupName = group.subject ?? group.name ?? "";
-      const groupMembers = group.participants.map(extractPhoneFromParticipant).filter((x): x is string => Boolean(x));
+      for (const participant of group.participants) {
+        if (isParticipantAdmin(participant)) continue;
 
-      for (const member of groupMembers) {
+        const member = extractPhoneFromParticipant(participant);
+        if (!member) continue;
+
         if (dontRemove.includes(member)) dontRemoveInGroupsCount += 1;
         if (exceptions.includes(member)) exceptionsInGroupsCount += 1;
 
