@@ -134,7 +134,7 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       BOOL_OR(is_adult) AS is_adult,
       BOOL_OR(is_legal_representative) AS is_legal_representative,
       BOOL_OR(represents_minor) AS represents_minor,
-      BOOL_AND(child_phone_matches_legal_rep) AS child_phone_matches_legal_rep
+      BOOL_OR(child_phone_matches_legal_rep) AS child_phone_matches_legal_rep
     FROM PhoneNumbers
     WHERE phone_number IS NOT NULL
     GROUP BY phone_number, registration_id, gender
