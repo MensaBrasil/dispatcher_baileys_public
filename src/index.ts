@@ -30,13 +30,34 @@ async function main() {
   program
     .option("--add", "Run add task")
     .option("--remove", "Run remove task")
-    .option("--scan", "Run scan task (group membership tracking)");
+    .option("--scan", "Run scan task (group membership tracking)")
+    .option("--community", "Restrict removals to community and announce groups only")
+    .option("--comunity", "Alias for --community");
   program.parse(process.argv);
-  const opts = program.opts<{ add?: boolean; remove?: boolean; scan?: boolean }>();
-  const anySpecified = Boolean(opts.add || opts.remove || opts.scan);
-  const runAdd = anySpecified ? Boolean(opts.add) : true;
-  const runRemove = anySpecified ? Boolean(opts.remove) : true;
-  const runScan = anySpecified ? Boolean(opts.scan) : process.env.ENABLE_SCAN === "true";
+  const opts = program.opts<{
+    add?: boolean;
+    remove?: boolean;
+    scan?: boolean;
+    community?: boolean;
+    comunity?: boolean;
+  }>();
+
+  const communityMode = Boolean(opts.community ?? opts.comunity);
+  const tasksSpecified = Boolean(opts.add || opts.remove || opts.scan);
+  const runAdd = tasksSpecified ? Boolean(opts.add) : true;
+  const runRemove = tasksSpecified ? Boolean(opts.remove || communityMode) : true;
+  const runScan = tasksSpecified ? Boolean(opts.scan) : true;
+
+  logger.info(
+    {
+      runAdd,
+      runRemove,
+      runScan,
+      communityMode,
+      removalScope: communityMode ? "community-only" : "all-admin",
+    },
+    "Task configuration resolved",
+  );
 
   // Ensure Twilio is properly configured and available before doing any work
   await ensureTwilioClientReadyOrExit();
@@ -108,7 +129,9 @@ async function main() {
         (g) => !isOrgMBGroup(g.subject ?? g.name ?? ""),
       );
       const mensaAdminGroups = adminNonOrg;
-      const removalGroups = [...adminNonOrg, ...communityAdminNonOrg, ...communityAnnounceAdminNonOrg];
+      const removalGroups = communityMode
+        ? [...communityAdminNonOrg, ...communityAnnounceAdminNonOrg]
+        : [...adminNonOrg, ...communityAdminNonOrg, ...communityAnnounceAdminNonOrg];
 
       // Build allowed groups for message sync (Mensa groups except OrgMB)
       try {
@@ -182,7 +205,7 @@ async function main() {
       try {
         const totalGroupsAll = groups.length + community.length + communityAnnounce.length;
         const notAdminCount = Math.max(0, groups.length - adminGroups.length);
-        const removalGroupsProcessed = removalGroups.length;
+        const removalGroupsProcessed = runRemove ? removalGroups.length : 0;
         const addQueueLength = await getQueueLength("addQueue");
         const removeQueueLength = await getQueueLength("removeQueue");
 
