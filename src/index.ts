@@ -124,14 +124,13 @@ async function main() {
         await processGroupsBaileys(sock);
       // Filter out OrgMB groups only (keep all others) and then apply Mensa classification for message history
       const adminNonOrg = adminGroups.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
-      const communityAdminNonOrg = adminCommunity.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
-      const communityAnnounceAdminNonOrg = adminCommunityAnnounce.filter(
-        (g) => !isOrgMBGroup(g.subject ?? g.name ?? ""),
-      );
       const mensaAdminGroups = adminNonOrg;
+      const removalAdminGroups = adminGroups;
+      const removalCommunityGroups = adminCommunity;
+      const removalCommunityAnnounceGroups = adminCommunityAnnounce;
       const removalGroups = communityMode
-        ? [...communityAdminNonOrg, ...communityAnnounceAdminNonOrg]
-        : [...adminNonOrg, ...communityAdminNonOrg, ...communityAnnounceAdminNonOrg];
+        ? [...removalCommunityGroups, ...removalCommunityAnnounceGroups]
+        : [...removalAdminGroups, ...removalCommunityGroups, ...removalCommunityAnnounceGroups];
 
       // Build allowed groups for message sync (Mensa groups except OrgMB)
       try {

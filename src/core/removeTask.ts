@@ -9,6 +9,7 @@ import {
   isAJBGroup,
   isMBMulheresGroup,
   isRJBGroup,
+  isOrgMBGroup,
 } from "../utils/checkGroupType.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
@@ -94,6 +95,7 @@ export async function removeMembersFromGroups(
     try {
       const groupId = group.id;
       const groupName = group.subject ?? group.name ?? "";
+      const isOrgGroup = isOrgMBGroup(groupName);
       const communityId = group.announceGroup ?? null;
       const pushRemoval = (item: Omit<RemovalQueueItem, "communityId">) => queueItems.push({ ...item, communityId });
       for (const participant of group.participants) {
@@ -106,6 +108,43 @@ export async function removeMembersFromGroups(
         if (exceptions.includes(member)) exceptionsInGroupsCount += 1;
 
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
+
+        if (isOrgGroup) {
+          if (checkResult.found) {
+            if (checkResult.status === "Inactive") {
+              const shouldRemove = await triggerTwilioOrRemove(member, "mensa_inactive");
+              if (shouldRemove) {
+                pushRemoval({
+                  type: "remove",
+                  registration_id: checkResult.mb!,
+                  groupId,
+                  phone: member,
+                  reason: "Inactive",
+                });
+                totalInactiveCount += 1;
+                uniqueInactive.add(member);
+                uniquePhones.add(member);
+              }
+            }
+          } else {
+            if (!dontRemove.includes(member)) {
+              const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
+              if (shouldRemove) {
+                pushRemoval({
+                  type: "remove",
+                  registration_id: null,
+                  groupId,
+                  phone: member,
+                  reason: "Not found in DB",
+                });
+                totalNotFoundCount += 1;
+                uniqueNotFound.add(member);
+                uniquePhones.add(member);
+              }
+            }
+          }
+          continue;
+        }
 
         if (checkResult.found && isMBMulheresGroup(groupName)) {
           if (!checkResult.has_adult_female && checkResult.gender === "Masculino") {
