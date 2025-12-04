@@ -123,6 +123,14 @@ async function main(): Promise<void> {
           else typeCounts.NotMensa += 1;
         }
 
+        const communityGroupsIamAdmin = values
+          .filter((g) => Boolean(g.isCommunity) && isAdmin(g))
+          .map((g) => ({ id: g.id, subject: g.subject, subgroups: subgroupsByCommunity[g.id] ?? 0 }));
+
+        const announceGroupsIamAdmin = values
+          .filter((g) => Boolean(g.isCommunityAnnounce) && isAdmin(g))
+          .map((g) => ({ id: g.id, subject: g.subject, linkedParent: g.linkedParent ?? null }));
+
         const summary = {
           totals: {
             totalGroups: total,
@@ -144,6 +152,8 @@ async function main(): Promise<void> {
             RJB: typeCounts.RJB,
             AJB: typeCounts.AJB,
           },
+          CommunityGroupsIamAdmin: communityGroupsIamAdmin,
+          AnnounceGroupsIamAdmin: announceGroupsIamAdmin,
         };
         const summaryPath = path.join(outDir, `groups_summary_${ts}.json`);
         await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
