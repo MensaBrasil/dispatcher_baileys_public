@@ -1,6 +1,9 @@
 import type { WASocket, GroupMetadata } from "baileys";
 
-type BaileysParticipant = { id: string; admin?: "admin" | "superadmin" | null; jid?: string } | { id: string } | string;
+type BaileysParticipant =
+  | { id: string; admin?: "admin" | "superadmin" | null; jid?: string; lid?: string; phoneNumber?: string }
+  | { id: string }
+  | string;
 
 export type MinimalGroup = {
   id: string;
@@ -19,14 +22,22 @@ function hasJid(x: unknown): x is { jid?: string } {
   return typeof x === "object" && x !== null && "jid" in x;
 }
 
+function normalizeUserBase(jid: string | undefined | null): string | null {
+  if (!jid) return null;
+  const [user] = jid.split("@", 2);
+  if (!user) return null;
+  const base = user.split(":")[0];
+  return base ?? null;
+}
+
 function isAdminForMe(participants: BaileysParticipant[], socketMeJid: string | undefined): boolean {
-  const meBare = socketMeJid?.split(":")[0];
-  const me = meBare ? `${meBare}@s.whatsapp.net` : undefined;
-  if (!me) return false;
+  const meBase = normalizeUserBase(socketMeJid);
+  if (!meBase) return false;
   for (const p of participants) {
     const pid = typeof p === "string" ? p : (p as { id: string }).id;
     const pjid = typeof p === "string" ? undefined : hasJid(p) ? p.jid : undefined;
-    if (pid === me || pjid === me) {
+    const baseId = normalizeUserBase(pid) ?? normalizeUserBase(pjid);
+    if (baseId && baseId === meBase) {
       if (typeof p === "string") return false;
       const role = (p as { admin?: "admin" | "superadmin" | null }).admin;
       return Boolean(role);

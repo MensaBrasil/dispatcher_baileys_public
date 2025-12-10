@@ -8,12 +8,13 @@ import type { BoomError } from "./types/ErrorTypes.js";
 import { addMembersToGroups, type AddSummary } from "./core/addTask.js";
 import { removeMembersFromGroups, type RemoveSummary } from "./core/removeTask.js";
 import { scanGroups } from "./core/scanTask.js";
-import { getPhoneNumbersWithStatus, saveGroupsToList } from "./db/pgsql.js";
+import { getPhoneNumbersWithStatus, saveGroupsToList, upsertLidMapping } from "./db/pgsql.js";
 import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { delaySecs } from "./utils/delay.js";
 import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
 import type { MinimalGroup } from "./utils/groups.js";
+import type { ResolveLidToPhoneFn } from "./utils/jid.js";
 import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
 import { checkPhoneNumber } from "./utils/phoneCheck.js";
 import { isOrgMBGroup } from "./utils/checkGroupType.js";
@@ -93,6 +94,24 @@ async function main() {
   const messageStore = await MessageStore.create({ filePath: process.env.MESSAGE_STORE_PATH });
   let sock: WASocket;
 
+  const lidResolver: ResolveLidToPhoneFn = async (lid) =>
+    (await sock?.signalRepository?.lidMapping?.getPNForLID(lid)) ?? null;
+
+  async function persistLidMapping(lid: string, phone: string, source: string): Promise<void> {
+    try {
+      if (sock?.signalRepository?.lidMapping) {
+        await sock.signalRepository.lidMapping.storeLIDPNMappings([{ lid, pn: phone }]);
+      }
+    } catch (err) {
+      logger.debug({ err, lid }, "Failed to store LID mapping in memory store");
+    }
+    try {
+      await upsertLidMapping(lid, phone, source);
+    } catch (err) {
+      logger.warn({ err, lid }, "Failed to persist LID mapping to DB (ensure whatsapp_lid_mappings exists)");
+    }
+  }
+
   let lastQR: string | undefined;
 
   // Orchestration: run tasks once per cycle (seconds only)
@@ -171,7 +190,9 @@ async function main() {
       // 3) Remove task
       let removeSummary: RemoveSummary | undefined;
       if (runRemove && phoneMap) {
-        removeSummary = await removeMembersFromGroups(removalGroups, phoneMap);
+        removeSummary = await removeMembersFromGroups(removalGroups, phoneMap, {
+          resolveLidToPhone: lidResolver,
+        });
       }
 
       if (runRemove && (runScan || false)) {
@@ -197,7 +218,7 @@ async function main() {
             logger.debug({ err, groupId }, "Failed to send seen for group (non-fatal)");
           }
         };
-        await scanGroups(mensaAdminGroups, phoneMap, { sendSeen });
+        await scanGroups(mensaAdminGroups, phoneMap, { sendSeen, resolveLidToPhone: lidResolver });
       }
 
       // End-of-cycle summary (stdout with colors)
@@ -438,6 +459,22 @@ async function main() {
     });
 
     s.ev.on("creds.update", saveCreds);
+
+    s.ev.on("lid-mapping.update", async (updates) => {
+      try {
+        const list = Array.isArray(updates) ? updates : [updates];
+        for (const item of list) {
+          const lid = (item as { lid?: string; id?: string }).lid ?? (item as { id?: string }).id;
+          const phone =
+            (item as { pn?: string; phoneNumber?: string }).pn ?? (item as { phoneNumber?: string }).phoneNumber;
+          if (lid && phone) {
+            await persistLidMapping(lid, phone, "lid-mapping.update");
+          }
+        }
+      } catch (err) {
+        logger.debug({ err }, "Failed to handle lid-mapping.update event (non-fatal)");
+      }
+    });
 
     // Handle message history & live messages
     s.ev.on("messaging-history.set", async ({ messages, progress, isLatest, syncType }) => {
