@@ -22,6 +22,10 @@ function hasJid(x: unknown): x is { jid?: string } {
   return typeof x === "object" && x !== null && "jid" in x;
 }
 
+function hasPhone(x: unknown): x is { phoneNumber?: string } {
+  return typeof x === "object" && x !== null && "phoneNumber" in x;
+}
+
 function normalizeUserBase(jid: string | undefined | null): string | null {
   if (!jid) return null;
   const [user] = jid.split("@", 2);
@@ -30,14 +34,29 @@ function normalizeUserBase(jid: string | undefined | null): string | null {
   return base ?? null;
 }
 
-function isAdminForMe(participants: BaileysParticipant[], socketMeJid: string | undefined): boolean {
-  const meBase = normalizeUserBase(socketMeJid);
-  if (!meBase) return false;
+function collectMeBases(sock: WASocket): Set<string> {
+  const bases = new Set<string>();
+  const candidates = [
+    sock.user?.id,
+    (sock.user as unknown as { lid?: string } | undefined)?.lid,
+    sock.authState?.creds?.me?.id,
+    sock.authState?.creds?.me?.lid,
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    const b = normalizeUserBase(c);
+    if (b) bases.add(b);
+  }
+  return bases;
+}
+
+function isAdminForMe(participants: BaileysParticipant[], meBases: Set<string>): boolean {
+  if (!meBases.size) return false;
   for (const p of participants) {
     const pid = typeof p === "string" ? p : (p as { id: string }).id;
     const pjid = typeof p === "string" ? undefined : hasJid(p) ? p.jid : undefined;
-    const baseId = normalizeUserBase(pid) ?? normalizeUserBase(pjid);
-    if (baseId && baseId === meBase) {
+    const pphone = typeof p === "string" ? undefined : hasPhone(p) ? p.phoneNumber : undefined;
+    const baseId = normalizeUserBase(pid) ?? normalizeUserBase(pjid) ?? normalizeUserBase(pphone);
+    if (baseId && meBases.has(baseId)) {
       if (typeof p === "string") return false;
       const role = (p as { admin?: "admin" | "superadmin" | null }).admin;
       return Boolean(role);
@@ -66,8 +85,8 @@ export async function processGroupsBaileys(
   const all = await sock.groupFetchAllParticipating();
   const allGroups = Object.values(all);
 
-  const meJid = sock.user?.id;
-  if (!meJid) {
+  const meBases = collectMeBases(sock);
+  if (!meBases.size) {
     throw new Error("Socket user JID not available");
   }
 
@@ -104,7 +123,7 @@ export async function processGroupsBaileys(
       const wait = Math.floor(Math.random() * delayMs);
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
-    const isAdmin = isAdminForMe(group.participants, meJid);
+    const isAdmin = isAdminForMe(group.participants, meBases);
     const isComm = Boolean(group.isCommunity);
     const isCommAnn = Boolean(group.isCommunityAnnounce);
     group.isAdmin = isAdmin;
