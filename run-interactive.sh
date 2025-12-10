@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 echo "Selecione o modo de execução:"
-echo "1) Rodar apenas adição (--add)"
-echo "2) Rodar apenas remoção (--remove)"
-echo "3) Rodar adição e scan (--add --scan)"
-echo "4) Rodar remoção e scan (--remove --scan)"
-echo "5) Rodar apenas scan (--scan)"
-echo "6) Rodar community (--add --community --scan)"
+echo " 1) Rodar apenas adição (--add)"
+echo " 2) Rodar apenas remoção (--remove)"
+echo " 3) Rodar adição e scan (--add --scan)"
+echo " 4) Rodar remoção e scan (--remove --scan)"
+echo " 5) Rodar apenas scan (--scan)"
+echo " 6) Rodar community (--add --community --scan)"
 printf "Opção: "
 read -r choice
 
@@ -19,6 +21,19 @@ case "$choice" in
   4) FLAGS=(--remove --scan) ;;
   5) FLAGS=(--scan) ;;
   6) FLAGS=(--add --community --scan) ;;
+  *) echo "Opção inválida."; exit 1 ;;
+esac
+
+echo
+echo "Selecione o método de autenticação:"
+echo " 1) QR code (default)"
+echo " 2) Pairing code (--pairing, requer PAIRING_PHONE na .env)"
+printf "Opção: "
+read -r auth_choice
+
+case "$auth_choice" in
+  1|"") ;;
+  2) FLAGS+=(--pairing) ;;
   *) echo "Opção inválida."; exit 1 ;;
 esac
 

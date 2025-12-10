@@ -33,7 +33,8 @@ async function main() {
     .option("--remove", "Run remove task")
     .option("--scan", "Run scan task (group membership tracking)")
     .option("--community", "Restrict removals to community and announce groups only")
-    .option("--comunity", "Alias for --community");
+    .option("--comunity", "Alias for --community")
+    .option("--pairing", "Use pairing code for login (requires PAIRING_PHONE env var)");
   program.parse(process.argv);
   const opts = program.opts<{
     add?: boolean;
@@ -41,6 +42,7 @@ async function main() {
     scan?: boolean;
     community?: boolean;
     comunity?: boolean;
+    pairing?: boolean;
   }>();
 
   const communityMode = Boolean(opts.community ?? opts.comunity);
@@ -48,6 +50,7 @@ async function main() {
   const runAdd = tasksSpecified ? Boolean(opts.add) : true;
   const runRemove = tasksSpecified ? Boolean(opts.remove || communityMode) : true;
   const runScan = tasksSpecified ? Boolean(opts.scan) : true;
+  const pairingCodeMode = Boolean(opts.pairing);
 
   logger.info(
     {
@@ -56,6 +59,7 @@ async function main() {
       runScan,
       communityMode,
       removalScope: communityMode ? "community-only" : "all-admin",
+      authMethod: pairingCodeMode ? "pairing" : "qr",
     },
     "Task configuration resolved",
   );
@@ -113,6 +117,32 @@ async function main() {
   }
 
   let lastQR: string | undefined;
+  let pairingCodeRequested = false;
+
+  async function requestPairingCodeIfNeeded(s: WASocket): Promise<void> {
+    if (!pairingCodeMode) return;
+    if (pairingCodeRequested) return;
+    if (s.authState.creds.registered) return;
+
+    const phoneNumber = (process.env.PAIRING_PHONE ?? "").replace(/\D/g, "");
+    if (!phoneNumber) {
+      throw new Error("Defina a env PAIRING_PHONE (ex: 5511999999999) para usar --pairing.");
+    }
+
+    try {
+      await s.waitForConnectionUpdate((u) => Promise.resolve(!!u.qr || u.connection === "open"));
+      const code = await s.requestPairingCode(phoneNumber);
+      pairingCodeRequested = true;
+      logger.warn(
+        { code },
+        "Pairing code gerado; entre em WhatsApp > Conectados > Adicionar dispositivo e insira o código.",
+      );
+    } catch (err) {
+      pairingCodeRequested = false;
+      logger.error({ err }, "Falha ao gerar pairing code");
+      throw err;
+    }
+  }
 
   // Orchestration: run tasks once per cycle (seconds only)
   const cycleDelaySeconds = Math.max(1, Math.floor(Number(process.env.CYCLE_DELAY_SECONDS ?? 1800)));
@@ -401,12 +431,13 @@ async function main() {
       getMessage: async (key) => messageStore.getMessage({ id: key.id }),
     });
 
+    await requestPairingCodeIfNeeded(sock);
     bindSocketEvents(sock);
   }
 
   function bindSocketEvents(s: WASocket) {
     s.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
-      if (qr) {
+      if (qr && !pairingCodeMode) {
         if (qr !== lastQR) {
           lastQR = qr;
           qrcode.generate(qr, { small: true });
