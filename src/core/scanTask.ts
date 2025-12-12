@@ -10,7 +10,11 @@ import {
 } from "../db/pgsql.js";
 import { delaySecs } from "../utils/delay.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
-import { extractPhoneFromParticipant, type MinimalParticipant as JidParticipant } from "../utils/jid.js";
+import {
+  extractPhoneFromParticipant,
+  type MinimalParticipant as JidParticipant,
+  type ResolveLidToPhoneFn,
+} from "../utils/jid.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 
 configDotenv({ path: ".env" });
@@ -30,7 +34,7 @@ export type SendSeenFn = (groupId: string) => Promise<void>;
 export async function scanGroups(
   groups: MinimalGroup[],
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
-  opts?: { sendSeen?: SendSeenFn },
+  opts?: { sendSeen?: SendSeenFn; resolveLidToPhone?: ResolveLidToPhoneFn },
 ): Promise<void> {
   for (const group of groups) {
     if (scanDelay > 0) {
@@ -52,7 +56,14 @@ export async function scanGroups(
       logger.debug({ count: previousMembers.length }, "Previous members count");
 
       const participants = group.participants;
-      const groupMembers = participants.map(extractPhoneFromParticipant).filter((x): x is string => Boolean(x));
+      const resolvedMembers = await Promise.all(
+        participants.map((p) =>
+          extractPhoneFromParticipant(p, {
+            resolveLidToPhone: opts?.resolveLidToPhone,
+          }),
+        ),
+      );
+      const groupMembers = resolvedMembers.filter((x): x is string => Boolean(x));
       logger.debug({ count: groupMembers.length }, "Current members count");
 
       const wppQueue = await getWhatsappQueue(groupId);

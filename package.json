@@ -22,7 +22,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.23.0",
   "dependencies": {
-    "baileys": "^6.7.19",
+    "baileys": "7.0.0-rc.6",
     "commander": "^14.0.0",
     "dotenv": "^17.2.1",
     "pg": "^8.16.3",

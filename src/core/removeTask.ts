@@ -13,7 +13,7 @@ import {
 } from "../utils/checkGroupType.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
-import { extractPhoneFromParticipant } from "../utils/jid.js";
+import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/jid.js";
 import type { MinimalGroup } from "../utils/groups.js";
 
 configDotenv({ path: ".env" });
@@ -64,9 +64,14 @@ type RemovalQueueItem = {
   communityId?: string | null;
 };
 
+type RemovalOptions = {
+  resolveLidToPhone?: ResolveLidToPhoneFn;
+};
+
 export async function removeMembersFromGroups(
   groups: MinimalGroup[],
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
+  opts: RemovalOptions = {},
 ): Promise<RemoveSummary> {
   const queueItems: RemovalQueueItem[] = [];
 
@@ -101,7 +106,9 @@ export async function removeMembersFromGroups(
       for (const participant of group.participants) {
         if (isParticipantAdmin(participant)) continue;
 
-        const member = extractPhoneFromParticipant(participant);
+        const member = await extractPhoneFromParticipant(participant, {
+          resolveLidToPhone: opts.resolveLidToPhone,
+        });
         if (!member) continue;
 
         if (dontRemove.includes(member)) dontRemoveInGroupsCount += 1;
