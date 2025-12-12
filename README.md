@@ -21,6 +21,7 @@ Ambiente (variáveis relevantes)
 - `ACTION_DELAY_MIN` (padrão: 1), `ACTION_DELAY_MAX` (padrão: 3), `ACTION_DELAY_JITTER` (padrão: 0.5): atraso aleatório entre tarefas.
 - `ENABLE_SCAN` (padrão: false): habilita tarefa de scan quando nenhuma flag é passada.
 - `WPP_STORE_GROUP_MESSAGE_CONTENT` (padrão: false): quando `true`, armazena o conteúdo textual das mensagens de grupos no banco de dados.
+- `BLOCKED_MB`: lista de `registration_id` separados por vírgula que não devem ser adicionados a nenhum grupo (são ignorados na addTask).
 - Credenciais de Postgres e Redis: ver `.env.example`.
 
 addTask — addMembersToGroups(groups)
@@ -51,6 +52,7 @@ Regras/filtragem de requisições
   - `no_of_attempts < 3`
   - `fulfilled = false`
   - `last_attempt < now() - 1 day` ou `last_attempt is null`
+- `BLOCKED_MB`: qualquer `registration_id` listado é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
 - Cada item é enriquecido com `group_type` conforme heurísticas de `checkGroupType` (ex.: grupos JB/MJB/…)
 
 Erros e logs

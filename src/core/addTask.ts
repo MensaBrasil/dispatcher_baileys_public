@@ -1,15 +1,27 @@
+import { config as configDotenv } from "dotenv";
 import logger from "../utils/logger.js";
 import { getWhatsappQueue, closePool } from "../db/pgsql.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { checkGroupType } from "../utils/checkGroupType.js";
 import type { GroupType } from "../types/DBTypes.js";
 
+configDotenv({ path: ".env" });
+
 type MinimalGroup = { id: string; subject?: string; name?: string };
 
 export type AddSummary = {
   totalPendingAdditionsCount: number;
   atleast1PendingAdditionsCount: number; // unique registrations awaiting addition
+  blockedRequestsCount: number;
+  blockedRegistrationsCount: number;
 };
+
+const blockedRegistrations = new Set(
+  (process.env.BLOCKED_MB ?? "")
+    .split(",")
+    .map((id) => Number.parseInt(id.trim(), 10))
+    .filter((id) => Number.isFinite(id)),
+);
 
 export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSummary> {
   const queueItems: Array<{
@@ -23,6 +35,8 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSum
   // Track totals for the cycle
   let totalPending = 0;
   const uniqueRegistrations = new Set<number>();
+  let blockedRequestsCount = 0;
+  const uniqueBlockedRegistrations = new Set<number>();
 
   for (const group of groups) {
     const groupId = group.id;
@@ -32,6 +46,16 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSum
 
       for (const request of queue) {
         try {
+          if (blockedRegistrations.has(request.registration_id)) {
+            blockedRequestsCount += 1;
+            uniqueBlockedRegistrations.add(request.registration_id);
+            logger.info(
+              { registration_id: request.registration_id, groupId, groupName },
+              "Registration blocked from addition; skipping request",
+            );
+            continue;
+          }
+
           const item = {
             type: "add" as const,
             request_id: request.request_id,
@@ -67,6 +91,8 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSum
   return {
     totalPendingAdditionsCount: totalPending,
     atleast1PendingAdditionsCount: uniqueRegistrations.size,
+    blockedRequestsCount,
+    blockedRegistrationsCount: uniqueBlockedRegistrations.size,
   };
 }
 

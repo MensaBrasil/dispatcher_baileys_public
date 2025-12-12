@@ -271,6 +271,11 @@ async function main() {
         if (addSummary) {
           logger.info(`\x1b[32m• Members awaiting addition: ${addSummary.atleast1PendingAdditionsCount}`);
           logger.info(`• Total pending additions: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
+          if (addSummary.blockedRegistrationsCount > 0) {
+            logger.info(
+              `\x1b[33m• Blocked by BLOCKED_MB: ${addSummary.blockedRegistrationsCount} members (${addSummary.blockedRequestsCount} requests skipped)\x1b[0m\n`,
+            );
+          }
         } else {
           logger.info("\x1b[32m• Add task disabled this cycle\x1b[0m\n");
         }
