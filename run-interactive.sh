@@ -9,6 +9,7 @@ echo " 3) Rodar adição e scan (--add --scan)"
 echo " 4) Rodar remoção e scan (--remove --scan)"
 echo " 5) Rodar apenas scan (--scan)"
 echo " 6) Rodar community (--add --community --scan)"
+echo " 7) Rodar adição, remoção e scan (--add --remove --scan)"
 printf "Opção: "
 read -r choice
 
@@ -21,6 +22,7 @@ case "$choice" in
   4) FLAGS=(--remove --scan) ;;
   5) FLAGS=(--scan) ;;
   6) FLAGS=(--add --community --scan) ;;
+  7) FLAGS=(--add --remove --scan) ;;
   *) echo "Opção inválida."; exit 1 ;;
 esac
 
