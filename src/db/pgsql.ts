@@ -82,9 +82,8 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
           WHEN r.transferred IS TRUE THEN 'Active'
           ELSE 'Inactive'
         END AS status,
-        CASE WHEN DATE_PART('year', AGE(r.birth_date)) <= 11 THEN TRUE ELSE FALSE END AS jb_under_10,
-        CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 10 AND DATE_PART('year', AGE(r.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_10,
-        CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 12 AND DATE_PART('year', AGE(r.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_12,
+        CASE WHEN DATE_PART('year', AGE(r.birth_date)) < 13 THEN TRUE ELSE FALSE END AS jb_under_13,
+        CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 13 AND DATE_PART('year', AGE(r.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_13_to_17,
         CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
         FALSE AS is_legal_representative,
         FALSE AS represents_minor,
@@ -92,7 +91,12 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
           WHEN DATE_PART('year', AGE(r.birth_date)) >= 18 THEN TRUE  
           WHEN lrp.all_legal_rep_phones IS NULL THEN FALSE
           ELSE p.phone_number = ANY(lrp.all_legal_rep_phones)
-        END AS child_phone_matches_legal_rep
+        END AS child_phone_matches_legal_rep,
+        CASE WHEN EXISTS (
+          SELECT 1
+          FROM whatsapp_auth_terms wat
+          WHERE wat.registration_id = p.registration_id AND wat.accepted IS TRUE
+        ) THEN TRUE ELSE FALSE END AS has_accepted_terms
       FROM phones p
       LEFT JOIN MaxExpirationDates med ON p.registration_id = med.registration_id
       LEFT JOIN registration r ON p.registration_id = r.registration_id
@@ -108,16 +112,20 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
           WHEN reg.transferred IS TRUE THEN 'Active'
           ELSE 'Inactive'
         END AS status,
-        CASE WHEN DATE_PART('year', AGE(reg.birth_date)) <= 11 THEN TRUE ELSE FALSE END AS jb_under_10,
-        CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 10 AND DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_10,
-        CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 12 AND DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_over_12,
+        CASE WHEN DATE_PART('year', AGE(reg.birth_date)) < 13 THEN TRUE ELSE FALSE END AS jb_under_13,
+        CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 13 AND DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_13_to_17,
         CASE WHEN DATE_PART('year', AGE(reg.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
         TRUE AS is_legal_representative,
         CASE                                            -- NEW: legal rep represents a minor iff represented child < 18
           WHEN DATE_PART('year', AGE(reg.birth_date)) < 18 THEN TRUE
           ELSE FALSE
         END AS represents_minor,
-        TRUE AS child_phone_matches_legal_rep 
+        TRUE AS child_phone_matches_legal_rep,
+        CASE WHEN EXISTS (
+          SELECT 1
+          FROM whatsapp_auth_terms wat
+          WHERE wat.registration_id = lr.registration_id AND wat.accepted IS TRUE
+        ) THEN TRUE ELSE FALSE END AS has_accepted_terms
       FROM legal_representatives lr
       LEFT JOIN MaxExpirationDates med ON lr.registration_id = med.registration_id
       LEFT JOIN registration reg ON lr.registration_id = reg.registration_id
@@ -128,13 +136,13 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       registration_id,
       gender,
       MAX(status) AS status,
-      BOOL_OR(jb_under_10) AS jb_under_10,
-      BOOL_OR(jb_over_10) AS jb_over_10,
-      BOOL_OR(jb_over_12) AS jb_over_12,
+      BOOL_OR(jb_under_13) AS jb_under_13,
+      BOOL_OR(jb_13_to_17) AS jb_13_to_17,
       BOOL_OR(is_adult) AS is_adult,
       BOOL_OR(is_legal_representative) AS is_legal_representative,
       BOOL_OR(represents_minor) AS represents_minor,
-      BOOL_OR(child_phone_matches_legal_rep) AS child_phone_matches_legal_rep
+      BOOL_OR(child_phone_matches_legal_rep) AS child_phone_matches_legal_rep,
+      BOOL_OR(has_accepted_terms) AS has_accepted_terms
     FROM PhoneNumbers
     WHERE phone_number IS NOT NULL
     GROUP BY phone_number, registration_id, gender
@@ -142,6 +150,39 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
   `;
   const { rows } = await p.query<PhoneNumberStatusRow>(query, [currentDate]);
   return rows;
+}
+
+export type RegistrationFlags = {
+  registration_id: number;
+  jb_under_13: boolean;
+  jb_13_to_17: boolean;
+  is_adult: boolean;
+  has_accepted_terms: boolean;
+};
+
+export async function getRegistrationFlags(registrationIds: number[]): Promise<Map<number, RegistrationFlags>> {
+  const p = getPool();
+  if (registrationIds.length === 0) return new Map();
+  const query = `
+    SELECT
+      r.registration_id,
+      CASE WHEN DATE_PART('year', AGE(r.birth_date)) < 13 THEN TRUE ELSE FALSE END AS jb_under_13,
+      CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 13 AND DATE_PART('year', AGE(r.birth_date)) < 18 THEN TRUE ELSE FALSE END AS jb_13_to_17,
+      CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
+      CASE WHEN EXISTS (
+        SELECT 1
+        FROM whatsapp_auth_terms wat
+        WHERE wat.registration_id = r.registration_id AND wat.accepted IS TRUE
+      ) THEN TRUE ELSE FALSE END AS has_accepted_terms
+    FROM registration r
+    WHERE r.registration_id = ANY($1)
+  `;
+  const { rows } = await p.query<RegistrationFlags>(query, [registrationIds]);
+  const flags = new Map<number, RegistrationFlags>();
+  for (const row of rows) {
+    flags.set(row.registration_id, row);
+  }
+  return flags;
 }
 
 export async function getLastCommunication(phoneNumber: string): Promise<{ reason: string; timestamp: Date } | false> {

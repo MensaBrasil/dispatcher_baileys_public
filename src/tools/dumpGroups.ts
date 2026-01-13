@@ -108,10 +108,9 @@ async function main(): Promise<void> {
         // Classification by group name for non-community groups
         const regularGroups = values.filter((g) => !g.isCommunity && !g.isCommunityAnnounce);
         const { checkGroupType } = await import("../utils/checkGroupType.js");
-        type GT = "MB" | "MJB" | "RJB" | "AJB" | "JB" | null;
+        type GT = "MB" | "RJB" | "AJB" | "JB" | null;
         const typeCounts: Record<Exclude<GT, null> | "NotMensa", number> = {
           MB: 0,
-          MJB: 0,
           RJB: 0,
           AJB: 0,
           JB: 0,
@@ -148,7 +147,6 @@ async function main(): Promise<void> {
             notMensa: typeCounts.NotMensa,
             MB: typeCounts.MB,
             JB: typeCounts.JB,
-            MJB: typeCounts.MJB,
             RJB: typeCounts.RJB,
             AJB: typeCounts.AJB,
           },

@@ -4,7 +4,6 @@ import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/re
 import { triggerTwilioOrRemove } from "../utils/twilio.js";
 import {
   isRegularJBGroup,
-  isMJBGroup,
   isNonJBGroup,
   isAJBGroup,
   isMBMulheresGroup,
@@ -39,12 +38,14 @@ export type RemoveSummary = {
   atleast1inactiveCount: number;
   totalNotFoundCount: number;
   atleast1notfoundCount: number;
-  totalJBOver10MJBCount: number;
-  atleast1JBOver10MJBCount: number;
-  totalJBUnder10JBCount: number;
-  atleast1JBUnder10JBCount: number;
+  totalUnder13Count: number;
+  atleast1Under13Count: number;
+  totalMissingGovTermsCount: number;
+  atleast1MissingGovTermsCount: number;
   totalJBInNonJBCount: number;
   atleast1JBInNonJBCount: number;
+  totalAdultNotLegalRepJBCount: number;
+  atleast1AdultNotLegalRepJBCount: number;
   dontRemoveInGroupsCount: number;
   exceptionsInGroupsCount: number;
   totalNoLongerRepMinorCount: number;
@@ -81,12 +82,14 @@ export async function removeMembersFromGroups(
   const uniqueInactive = new Set<string>();
   let totalNotFoundCount = 0;
   const uniqueNotFound = new Set<string>();
-  let totalJBOver10MJBCount = 0;
-  const uniqueJBOver10MJB = new Set<string>();
-  let totalJBUnder10JBCount = 0;
-  const uniqueJBUnder10JB = new Set<string>();
+  let totalUnder13Count = 0;
+  const uniqueUnder13 = new Set<string>();
+  let totalMissingGovTermsCount = 0;
+  const uniqueMissingGovTerms = new Set<string>();
   let totalJBInNonJBCount = 0;
   const uniqueJBInNonJB = new Set<string>();
+  let totalAdultNotLegalRepJBCount = 0;
+  const uniqueAdultNotLegalRepJB = new Set<string>();
   let dontRemoveInGroupsCount = 0;
   let exceptionsInGroupsCount = 0;
   let totalNoLongerRepMinorCount = 0;
@@ -111,10 +114,42 @@ export async function removeMembersFromGroups(
         });
         if (!member) continue;
 
-        if (dontRemove.includes(member)) dontRemoveInGroupsCount += 1;
-        if (exceptions.includes(member)) exceptionsInGroupsCount += 1;
+        const isDontRemove = dontRemove.includes(member);
+        const isException = exceptions.includes(member);
+        if (isDontRemove) dontRemoveInGroupsCount += 1;
+        if (isException) exceptionsInGroupsCount += 1;
 
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
+
+        const isAJB = isAJBGroup(groupName);
+        const isRJB = isRJBGroup(groupName);
+        const isRegularJB = isRegularJBGroup(groupName);
+        const isJBGroup = isRegularJB;
+        const isNonJB = isNonJBGroup(groupName, jbExceptionGroupNames);
+
+        const isLegalRep = Boolean(checkResult.is_legal_representative);
+        const isAdult = Boolean(checkResult.is_adult);
+        const childPhoneMatchesRep = Boolean(checkResult.child_phone_matches_legal_rep);
+        const isEffectiveLegalRep = isLegalRep || (!isAdult && childPhoneMatchesRep);
+        const isChild = !isAdult && !isEffectiveLegalRep;
+        const isUnder13 = isChild && Boolean(checkResult.jb_under_13);
+        const jb13To17Registration = Boolean(checkResult.jb_13_to_17);
+        const isJB13To17 = isChild && jb13To17Registration;
+        const hasAcceptedTerms = Boolean(checkResult.has_accepted_terms);
+
+        if (checkResult.found && !isException && isUnder13) {
+          pushRemoval({
+            type: "remove",
+            registration_id: checkResult.mb!,
+            groupId,
+            phone: member,
+            reason: "Under 13 not allowed in WhatsApp groups.",
+          });
+          totalUnder13Count += 1;
+          uniqueUnder13.add(member);
+          uniquePhones.add(member);
+          continue;
+        }
 
         if (isOrgGroup) {
           if (checkResult.found) {
@@ -134,7 +169,7 @@ export async function removeMembersFromGroups(
               }
             }
           } else {
-            if (!dontRemove.includes(member)) {
+            if (!isDontRemove) {
               const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
               if (shouldRemove) {
                 pushRemoval({
@@ -167,38 +202,22 @@ export async function removeMembersFromGroups(
           }
         }
 
-        if (checkResult.found && isRJBGroup(groupName)) {
-          if (groupName === "R.JB | Familiares de JB 12+") {
-            if (checkResult.is_adult && (!checkResult.is_legal_representative || !checkResult.represents_jb_over_12)) {
-              pushRemoval({
-                type: "remove",
-                registration_id: checkResult.mb!,
-                groupId,
-                phone: member,
-                reason: "Member is not legal representative of a 12+ years old member.",
-              });
-              if (!checkResult.is_legal_representative) {
-                totalNonLegalRepCount += 1;
-                uniqueNonLegalRep.add(member);
-              }
-              uniquePhones.add(member);
-              continue;
-            }
+        if (checkResult.found && isRJB) {
+          if (isChild) {
+            pushRemoval({
+              type: "remove",
+              registration_id: checkResult.mb!,
+              groupId,
+              phone: member,
+              reason: "Child's phone doesn't match legal representative's phone in R.JB group",
+            });
+            totalChildPhoneMismatchCount += 1;
+            uniqueChildPhoneMismatch.add(member);
+            uniquePhones.add(member);
+            continue;
+          }
 
-            if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
-              pushRemoval({
-                type: "remove",
-                registration_id: checkResult.mb!,
-                groupId,
-                phone: member,
-                reason: "Legal representative no longer represents a minor (child is 18+).",
-              });
-              totalNoLongerRepMinorCount += 1;
-              uniqueNoLongerRepMinor.add(member);
-              uniquePhones.add(member);
-              continue;
-            }
-          } else if (checkResult.is_adult && !checkResult.is_legal_representative) {
+          if (!isEffectiveLegalRep) {
             pushRemoval({
               type: "remove",
               registration_id: checkResult.mb!,
@@ -210,7 +229,21 @@ export async function removeMembersFromGroups(
             uniqueNonLegalRep.add(member);
             uniquePhones.add(member);
             continue;
-          } else if (checkResult.is_adult && checkResult.is_legal_representative && !checkResult.represents_minor) {
+          }
+
+          if (groupName === "R.JB | Familiares de JB 12+" && !checkResult.represents_jb_13_to_17) {
+            pushRemoval({
+              type: "remove",
+              registration_id: checkResult.mb!,
+              groupId,
+              phone: member,
+              reason: "Member is not legal representative of a 13+ years old member.",
+            });
+            uniquePhones.add(member);
+            continue;
+          }
+
+          if (isEffectiveLegalRep && !checkResult.represents_minor) {
             pushRemoval({
               type: "remove",
               registration_id: checkResult.mb!,
@@ -225,69 +258,52 @@ export async function removeMembersFromGroups(
           }
         }
 
-        if (
-          checkResult.found &&
-          isRJBGroup(groupName) &&
-          !checkResult.is_adult &&
-          (checkResult.jb_under_10 || checkResult.jb_over_10 || checkResult.jb_over_12) &&
-          !checkResult.child_phone_matches_legal_rep
-        ) {
-          pushRemoval({
-            type: "remove",
-            registration_id: checkResult.mb!,
-            groupId,
-            phone: member,
-            reason: "Child's phone doesn't match legal representative's phone in R.JB group",
-          });
-          totalChildPhoneMismatchCount += 1;
-          uniqueChildPhoneMismatch.add(member);
-          uniquePhones.add(member);
-        }
-
         if (checkResult.found) {
-          if (
-            !(checkResult.is_adult || (checkResult.jb_under_10 && checkResult.jb_over_10)) &&
-            !exceptions.includes(member) &&
-            !isAJBGroup(groupName)
-          ) {
-            if (isRegularJBGroup(groupName) && checkResult.jb_under_10) {
+          if (!isException && !isAJB) {
+            if (isJBGroup && isAdult && !isEffectiveLegalRep) {
               pushRemoval({
                 type: "remove",
                 registration_id: checkResult.mb!,
                 groupId,
                 phone: member,
-                reason: "User is JB under 10 in JB group",
+                reason: "Adult is not a legal representative in JB group.",
               });
-              totalJBUnder10JBCount += 1;
-              uniqueJBUnder10JB.add(member);
+              totalAdultNotLegalRepJBCount += 1;
+              uniqueAdultNotLegalRepJB.add(member);
               uniquePhones.add(member);
-            } else if (isMJBGroup(groupName) && checkResult.jb_over_10) {
-              pushRemoval({
-                type: "remove",
-                registration_id: checkResult.mb!,
-                groupId,
-                phone: member,
-                reason: "User is JB over 10 in M.JB group",
-              });
-              totalJBOver10MJBCount += 1;
-              uniqueJBOver10MJB.add(member);
-              uniquePhones.add(member);
-            } else if (
-              isNonJBGroup(groupName, jbExceptionGroupNames) &&
-              (checkResult.jb_under_10 || checkResult.jb_over_10)
-            ) {
-              pushRemoval({
-                type: "remove",
-                registration_id: checkResult.mb!,
-                groupId,
-                phone: member,
-                reason: "User is JB in non-JB group",
-              });
-              totalJBInNonJBCount += 1;
-              uniqueJBInNonJB.add(member);
-              uniquePhones.add(member);
+              continue;
             }
-          } else if (checkResult.status === "Inactive") {
+
+            if (isJBGroup && jb13To17Registration && !hasAcceptedTerms) {
+              pushRemoval({
+                type: "remove",
+                registration_id: checkResult.mb!,
+                groupId,
+                phone: member,
+                reason: "Missing gov.br authorization.",
+              });
+              totalMissingGovTermsCount += 1;
+              uniqueMissingGovTerms.add(member);
+              uniquePhones.add(member);
+              continue;
+            }
+          }
+
+          if (!isException && isNonJB && isJB13To17) {
+            pushRemoval({
+              type: "remove",
+              registration_id: checkResult.mb!,
+              groupId,
+              phone: member,
+              reason: "User is JB in non-JB group",
+            });
+            totalJBInNonJBCount += 1;
+            uniqueJBInNonJB.add(member);
+            uniquePhones.add(member);
+            continue;
+          }
+
+          if (checkResult.status === "Inactive") {
             const shouldRemove = await triggerTwilioOrRemove(member, "mensa_inactive");
             if (shouldRemove) {
               pushRemoval({
@@ -303,7 +319,7 @@ export async function removeMembersFromGroups(
             }
           }
         } else {
-          if (!dontRemove.includes(member)) {
+          if (!isDontRemove) {
             const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
             if (shouldRemove) {
               pushRemoval({ type: "remove", registration_id: null, groupId, phone: member, reason: "Not found in DB" });
@@ -334,12 +350,14 @@ export async function removeMembersFromGroups(
     atleast1inactiveCount: uniqueInactive.size,
     totalNotFoundCount,
     atleast1notfoundCount: uniqueNotFound.size,
-    totalJBOver10MJBCount,
-    atleast1JBOver10MJBCount: uniqueJBOver10MJB.size,
-    totalJBUnder10JBCount,
-    atleast1JBUnder10JBCount: uniqueJBUnder10JB.size,
+    totalUnder13Count,
+    atleast1Under13Count: uniqueUnder13.size,
+    totalMissingGovTermsCount,
+    atleast1MissingGovTermsCount: uniqueMissingGovTerms.size,
     totalJBInNonJBCount,
     atleast1JBInNonJBCount: uniqueJBInNonJB.size,
+    totalAdultNotLegalRepJBCount,
+    atleast1AdultNotLegalRepJBCount: uniqueAdultNotLegalRepJB.size,
     dontRemoveInGroupsCount,
     exceptionsInGroupsCount,
     totalNoLongerRepMinorCount,

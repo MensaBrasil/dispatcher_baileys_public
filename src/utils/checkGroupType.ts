@@ -15,7 +15,6 @@ export async function checkGroupType(groupName: string): Promise<GroupType | nul
   try {
     if (isOrgMBGroup(groupName)) return "OrgMB";
     if (isRegularJBGroup(groupName)) return "JB";
-    if (isMJBGroup(groupName)) return "MJB";
     if (isRJBGroup(groupName)) return "RJB";
     if (isMBTokenGroup(groupName)) return "MB";
     if (isAJBGroup(groupName)) return "AJB";
@@ -30,11 +29,7 @@ export default { checkGroupType };
 
 // Extra helpers for removeTask
 export function isRegularJBGroup(name: string): boolean {
-  return /JB/i.test(name) && !/M\.?\s?JB/i.test(name) && !/R\.?\s?JB/i.test(name);
-}
-
-export function isMJBGroup(name: string): boolean {
-  return /M\.?\s?JB/i.test(name) && !/R\.?\s?JB/i.test(name);
+  return /JB/i.test(name) && !/R\.?\s?JB/i.test(name);
 }
 
 export function isRJBGroup(name: string): boolean {

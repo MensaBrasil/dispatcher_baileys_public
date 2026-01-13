@@ -5,12 +5,12 @@ export interface PhoneNumberStatusRow {
   registration_id: number;
   gender: Gender;
   status: "Active" | "Inactive";
-  jb_under_10: boolean;
-  jb_over_10: boolean;
-  jb_over_12: boolean;
+  jb_under_13: boolean;
+  jb_13_to_17: boolean;
   is_adult: boolean;
   is_legal_representative: boolean;
   child_phone_matches_legal_rep: boolean;
+  has_accepted_terms: boolean;
 }
 
 export interface PhoneCheckResult {
@@ -18,13 +18,13 @@ export interface PhoneCheckResult {
   status?: "Active" | "Inactive";
   mb?: number;
   gender?: Gender;
-  jb_under_10?: boolean;
-  jb_over_10?: boolean;
-  jb_over_12?: boolean;
+  jb_under_13?: boolean;
+  jb_13_to_17?: boolean;
   is_adult?: boolean;
   is_legal_representative?: boolean;
-  represents_jb_over_12?: boolean;
+  represents_jb_13_to_17?: boolean;
   has_adult_female?: boolean;
   represents_minor?: boolean;
   child_phone_matches_legal_rep?: boolean;
+  has_accepted_terms?: boolean;
 }

@@ -53,7 +53,7 @@ Regras/filtragem de requisições
   - `fulfilled = false`
   - `last_attempt < now() - 1 day` ou `last_attempt is null`
 - `BLOCKED_MB`: qualquer `registration_id` listado é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
-- Cada item é enriquecido com `group_type` conforme heurísticas de `checkGroupType` (ex.: grupos JB/MJB/…)
+- Cada item é enriquecido com `group_type` conforme heurísticas de `checkGroupType` (ex.: grupos JB/RJB/AJB/MB/OrgMB)
 
 Erros e logs
 
@@ -83,9 +83,9 @@ O que faz
 
 - Percorre membros de cada grupo (a partir de `participants` do Baileys, já fornecidos pelo orquestrador) e cruza com o mapa de telefones/estado do DB (`phoneNumbersFromDB`).
 - Aplica regras por tipo de grupo e estado do membro para decidir remoção:
-  - Inconsistências por faixa etária JB/MJB/Não-JB (via `isRegularJBGroup`, `isMJBGroup`, `isNonJBGroup`).
+  - Regras por faixa etária JB vs não-JB, menores de 13 e autorização gov.br (via `isRegularJBGroup`, `isNonJBGroup`).
   - Grupo “MB | Mulheres”: remove números com `gender = Masculino`.
-  - Grupo “R.JB | Familiares de JB 12+”: remove quem não é representante legal.
+  - Grupo “R.JB | Familiares de JB 12+”: exige responsável legal que represente JB 13+.
   - `status = Inactive`: antes de remover, chama `triggerTwilioOrRemove(phone, "mensa_inactive")` para respeitar período de espera/comunicação.
   - Números não encontrados no DB: idem acima, com razão `"mensa_not_found"`.
   - Respeita listas `DONT_REMOVE_NUMBERS` e `EXCEPTIONS` (variáveis de ambiente, separadas por vírgula).
@@ -96,13 +96,16 @@ O que faz
 Campos/formatos
 
 - `MinimalGroup`: `{ id, subject?, name?, participants, announceGroup? }` (fornecido pelo orquestrador a partir do Baileys).
-- `PhoneNumberStatusRow`: inclui `status (Active|Inactive)`, `jb_under_10`, `jb_over_10`, `is_adult`, `is_legal_representative`, `gender`, etc.
+- `PhoneNumberStatusRow`: inclui `status (Active|Inactive)`, `jb_under_13`, `jb_13_to_17`, `is_adult`, `is_legal_representative`, `has_accepted_terms`, `gender`, etc.
 
 Regras em detalhes
 
-- JB regular vs M.JB vs Não-JB:
-  - JB regular: remove `jb_under_10` em grupos JB; M.JB: remove `jb_over_10`; Não-JB (com exceções nominais): remove qualquer JB.
-  - Grupos AJB não aplicam as regras de idade.
+- JB vs Não-JB:
+  - Menores de 13 são removidos de qualquer grupo.
+  - JB 13-17 são removidos de grupos não-JB.
+  - Em grupos JB, adultos só permanecem se forem responsáveis cadastrados.
+  - JB 13-17 sem aceite gov.br são removidos de grupos JB.
+  - Grupos AJB não aplicam as regras de idade acima (exceto menores de 13).
 - Twilio/espera: `triggerTwilioOrRemove` registra comunicação e pode acionar flow do Twilio Studio. Retorna `true` apenas quando período de espera terminou, indicando que remoção é segura.
 
 Observações/consistência

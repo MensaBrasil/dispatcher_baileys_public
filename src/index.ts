@@ -294,12 +294,17 @@ async function main() {
           );
 
           logger.info(
-            `• JB over 10 in M.JB: ${removeSummary.atleast1JBOver10MJBCount} members (${removeSummary.totalJBOver10MJBCount} total occurrences)`,
+            `• Under 13 in any group: ${removeSummary.atleast1Under13Count} members (${removeSummary.totalUnder13Count} total occurrences)`,
           );
 
           logger.info(
-            `• JB under 10 in JB: ${removeSummary.atleast1JBUnder10JBCount} members (${removeSummary.totalJBUnder10JBCount} total occurrences)`,
+            `• Missing gov.br authorization (JB 13-17): ${removeSummary.atleast1MissingGovTermsCount} members (${removeSummary.totalMissingGovTermsCount} total occurrences)`,
           );
+
+          logger.info(
+            `• Adult not legal representative in JB: ${removeSummary.atleast1AdultNotLegalRepJBCount} members (${removeSummary.totalAdultNotLegalRepJBCount} total occurrences)`,
+          );
+
           logger.info(
             `• Adult not legal representative in R.JB: ${removeSummary.atleast1NonLegalRepCount} members (${removeSummary.totalNonLegalRepCount} total occurrences)`,
           );

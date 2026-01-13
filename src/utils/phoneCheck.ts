@@ -42,27 +42,31 @@ export function checkPhoneNumber(
   const matchedEntries = phoneNumberMap.get(inputPhoneNumber) ?? [];
 
   if (matchedEntries.length > 0) {
-    let hasJbUnder10 = false;
-    let hasJbOver10 = false;
-    let hasJbOver12 = false;
+    let hasJbUnder13 = false;
+    let hasJb13To17 = false;
     let hasAdult = false;
     let hasAdultFemale = false;
     let isLegalRepresentative = false;
-    let representsJbOver12 = false;
+    let representsJb13To17 = false;
     let representsMinor = false;
     let childPhoneMatchesLegalRep = false;
+    let hasAcceptedTerms = false;
 
     for (const entry of matchedEntries) {
-      if (entry.jb_under_10) hasJbUnder10 = true;
-      if (entry.jb_over_10) hasJbOver10 = true;
-      if (entry.jb_over_12) hasJbOver12 = true;
+      if (entry.jb_under_13) hasJbUnder13 = true;
+      if (entry.jb_13_to_17) hasJb13To17 = true;
       if (entry.is_adult) hasAdult = true;
       if (entry.gender === "Feminino" && entry.is_adult) hasAdultFemale = true;
       if (entry.child_phone_matches_legal_rep) childPhoneMatchesLegalRep = true;
+      if (entry.has_accepted_terms) hasAcceptedTerms = true;
       if (entry.is_legal_representative) {
         isLegalRepresentative = true;
-        if (entry.jb_over_12) representsJbOver12 = true;
-        if (entry.jb_under_10 || entry.jb_over_10) representsMinor = true;
+        if (entry.jb_13_to_17) representsJb13To17 = true;
+        if (entry.jb_under_13 || entry.jb_13_to_17) representsMinor = true;
+      }
+      if (!entry.is_adult && entry.child_phone_matches_legal_rep) {
+        if (entry.jb_13_to_17) representsJb13To17 = true;
+        if (entry.jb_under_13 || entry.jb_13_to_17) representsMinor = true;
       }
     }
 
@@ -71,15 +75,15 @@ export function checkPhoneNumber(
       status: matchedEntries[0]!.status,
       mb: matchedEntries[0]!.registration_id,
       gender: matchedEntries[0]!.gender,
-      jb_under_10: hasJbUnder10,
-      jb_over_10: hasJbOver10,
-      jb_over_12: hasJbOver12,
+      jb_under_13: hasJbUnder13,
+      jb_13_to_17: hasJb13To17,
       is_adult: hasAdult,
       is_legal_representative: isLegalRepresentative,
-      represents_jb_over_12: representsJbOver12,
+      represents_jb_13_to_17: representsJb13To17,
       represents_minor: representsMinor,
       has_adult_female: hasAdultFemale,
       child_phone_matches_legal_rep: childPhoneMatchesLegalRep,
+      has_accepted_terms: hasAcceptedTerms,
     };
   }
 
