@@ -27,6 +27,37 @@ function getPool(): Pool {
   return pool;
 }
 
+type PgErrorLike = { code?: string; message?: string };
+
+function parseVarcharLimit(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null;
+  const message = "message" in err ? String((err as PgErrorLike).message ?? "") : "";
+  const match = /character varying\((\d+)\)/i.exec(message);
+  if (!match) return null;
+  const limit = Number.parseInt(match[1] ?? "", 10);
+  return Number.isFinite(limit) ? limit : null;
+}
+
+function getMaxStringLengths(rows: WhatsappMessageRow[]) {
+  const max = {
+    message_id: 0,
+    group_id: 0,
+    phone: 0,
+    message_type: 0,
+    device_type: 0,
+    content: 0,
+  };
+  for (const row of rows) {
+    if (row.message_id.length > max.message_id) max.message_id = row.message_id.length;
+    if (row.group_id.length > max.group_id) max.group_id = row.group_id.length;
+    if (row.phone && row.phone.length > max.phone) max.phone = row.phone.length;
+    if (row.message_type.length > max.message_type) max.message_type = row.message_type.length;
+    if (row.device_type.length > max.device_type) max.device_type = row.device_type.length;
+    if (row.content && row.content.length > max.content) max.content = row.content.length;
+  }
+  return max;
+}
+
 export async function getWhatsappQueue(group_id: string): Promise<DBGroupRequest[]> {
   const p = getPool();
   const query = `
@@ -313,11 +344,31 @@ export async function insertNewWhatsAppMessages(messages: WhatsappMessageRow[]):
     VALUES ${placeholders.join(", ")}
     ON CONFLICT (message_id) DO NOTHING
   `;
-  const res = await p.query(sql, values);
-  // rowCount will be 0 when all conflicted; PG may not return per-row inserted count for multi-values
-  // Fallback to messages.length is inaccurate when conflicts happen; try to infer using GET DIAGNOSTICS is complex here.
-  // Return res.rowCount if available, else 0.
-  return res.rowCount ?? 0;
+  try {
+    const res = await p.query(sql, values);
+    // rowCount will be 0 when all conflicted; PG may not return per-row inserted count for multi-values
+    // Fallback to messages.length is inaccurate when conflicts happen; try to infer using GET DIAGNOSTICS is complex here.
+    // Return res.rowCount if available, else 0.
+    return res.rowCount ?? 0;
+  } catch (err) {
+    const pgErr = err as PgErrorLike;
+    const limit = parseVarcharLimit(err);
+    if (pgErr.code === "22001" || limit !== null) {
+      const maxLens = getMaxStringLengths(valid);
+      const effectiveLimit = limit ?? 0;
+      const fieldsOverLimit =
+        effectiveLimit > 0
+          ? Object.entries(maxLens)
+              .filter(([, len]) => len > effectiveLimit)
+              .map(([field]) => field)
+          : [];
+      logger.error(
+        { err, limit: limit ?? undefined, maxLens, fieldsOverLimit },
+        "[pg] whatsapp_messages value too long; check column widths",
+      );
+    }
+    throw err;
+  }
 }
 
 export default { getWhatsappQueue, closePool };

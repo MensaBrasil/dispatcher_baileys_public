@@ -101,7 +101,17 @@ export async function resolveParticipantIdentity(
   if (lid && opts.resolveLidToPhone) {
     const resolved = await opts.resolveLidToPhone(lid);
     if (resolved) {
-      return { phone: resolved, lid };
+      if (resolved.includes("@")) {
+        const pn = extractPhoneFromPnJid(resolved);
+        if (pn) {
+          return { phone: pn, lid };
+        }
+      } else {
+        const pn = onlyDigits(resolved);
+        if (pn) {
+          return { phone: pn, lid };
+        }
+      }
     }
   }
 
