@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { config as configDotenv } from "dotenv";
 import { Pool } from "pg";
 import logger from "../utils/logger.js";
@@ -25,6 +26,149 @@ function getPool(): Pool {
     });
   }
   return pool;
+}
+
+type PgErrorLike = { code?: string; message?: string };
+type ColumnLimitRow = { column_name: string; character_maximum_length: number | null };
+
+let whatsappMessagesColumnLimits: Record<string, number | null> | null = null;
+
+function parseVarcharLimit(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null;
+  const message = "message" in err ? String((err as PgErrorLike).message ?? "") : "";
+  const match = /character varying\((\d+)\)/i.exec(message);
+  if (!match) return null;
+  const limit = Number.parseInt(match[1] ?? "", 10);
+  return Number.isFinite(limit) ? limit : null;
+}
+
+async function getWhatsappMessagesColumnLimits(): Promise<Record<string, number | null>> {
+  if (whatsappMessagesColumnLimits) return whatsappMessagesColumnLimits;
+  const p = getPool();
+  const query = `
+    SELECT column_name, character_maximum_length
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'whatsapp_messages'
+  `;
+  try {
+    const { rows } = await p.query<ColumnLimitRow>(query);
+    const limits: Record<string, number | null> = {};
+    for (const row of rows) {
+      limits[row.column_name] = row.character_maximum_length ?? null;
+    }
+    whatsappMessagesColumnLimits = limits;
+  } catch (err) {
+    logger.warn({ err }, "[pg] Failed to read whatsapp_messages column limits; skipping length normalization");
+    whatsappMessagesColumnLimits = {};
+  }
+  return whatsappMessagesColumnLimits;
+}
+
+function hashToLimit(value: string, limit: number): string {
+  if (limit <= 0) return value;
+  const hash = createHash("sha1").update(value).digest("hex");
+  return hash.length >= limit ? hash.slice(0, limit) : hash.padEnd(limit, "0");
+}
+
+function normalizeGroupIdForLimit(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  const [user] = value.split("@", 1);
+  if (user && user.length <= limit) return user;
+  return hashToLimit(value, limit);
+}
+
+function truncateToLimit(value: string, limit: number): string {
+  return value.length > limit ? value.slice(0, limit) : value;
+}
+
+async function normalizeWhatsappMessagesGroupId(groupId: string): Promise<string> {
+  const limits = await getWhatsappMessagesColumnLimits();
+  const limit = limits.group_id;
+  if (!limit || groupId.length <= limit) return groupId;
+  return normalizeGroupIdForLimit(groupId, limit);
+}
+
+async function sanitizeWhatsappMessageRows(rows: WhatsappMessageRow[]): Promise<WhatsappMessageRow[]> {
+  const limits = await getWhatsappMessagesColumnLimits();
+  const messageIdLimit = limits.message_id ?? null;
+  const groupIdLimit = limits.group_id ?? null;
+  const phoneLimit = limits.phone ?? null;
+  const messageTypeLimit = limits.message_type ?? null;
+  const deviceTypeLimit = limits.device_type ?? null;
+  const contentLimit = limits.content ?? null;
+
+  if (!messageIdLimit && !groupIdLimit && !phoneLimit && !messageTypeLimit && !deviceTypeLimit && !contentLimit) {
+    return rows;
+  }
+
+  const sanitized: WhatsappMessageRow[] = [];
+  for (const row of rows) {
+    const phone = row.phone;
+    if (phone && phoneLimit && phone.length > phoneLimit) {
+      logger.warn(
+        { phoneLength: phone.length, phoneLimit },
+        "[pg] Skipping whatsapp message with phone too long for schema",
+      );
+      continue;
+    }
+
+    let message_id = row.message_id;
+    if (messageIdLimit && message_id.length > messageIdLimit) {
+      message_id = hashToLimit(message_id, messageIdLimit);
+    }
+
+    let group_id = row.group_id;
+    if (groupIdLimit && group_id.length > groupIdLimit) {
+      group_id = normalizeGroupIdForLimit(group_id, groupIdLimit);
+    }
+
+    let message_type = row.message_type;
+    if (messageTypeLimit && message_type.length > messageTypeLimit) {
+      message_type = truncateToLimit(message_type, messageTypeLimit);
+    }
+
+    let device_type = row.device_type;
+    if (deviceTypeLimit && device_type.length > deviceTypeLimit) {
+      device_type = truncateToLimit(device_type, deviceTypeLimit);
+    }
+
+    let content = row.content;
+    if (content && contentLimit && content.length > contentLimit) {
+      content = truncateToLimit(content, contentLimit);
+    }
+
+    sanitized.push({
+      ...row,
+      message_id,
+      group_id,
+      phone,
+      message_type,
+      device_type,
+      content,
+    });
+  }
+  return sanitized;
+}
+
+function getMaxStringLengths(rows: WhatsappMessageRow[]) {
+  const max = {
+    message_id: 0,
+    group_id: 0,
+    phone: 0,
+    message_type: 0,
+    device_type: 0,
+    content: 0,
+  };
+  for (const row of rows) {
+    if (row.message_id.length > max.message_id) max.message_id = row.message_id.length;
+    if (row.group_id.length > max.group_id) max.group_id = row.group_id.length;
+    if (row.phone && row.phone.length > max.phone) max.phone = row.phone.length;
+    if (row.message_type.length > max.message_type) max.message_type = row.message_type.length;
+    if (row.device_type.length > max.device_type) max.device_type = row.device_type.length;
+    if (row.content && row.content.length > max.content) max.content = row.content.length;
+  }
+  return max;
 }
 
 export async function getWhatsappQueue(group_id: string): Promise<DBGroupRequest[]> {
@@ -295,12 +439,13 @@ export async function saveGroupsToList(groups: Array<{ group_id: string; group_n
  */
 export async function getLastMessageTimestamp(groupId: string): Promise<number> {
   const p = getPool();
+  const normalizedGroupId = await normalizeWhatsappMessagesGroupId(groupId);
   const query = `
     SELECT EXTRACT(EPOCH FROM MAX(timestamp))::INT AS unix_timestamp
     FROM whatsapp_messages
     WHERE group_id = $1
   `;
-  const { rows } = await p.query<{ unix_timestamp: number | null }>(query, [groupId]);
+  const { rows } = await p.query<{ unix_timestamp: number | null }>(query, [normalizedGroupId]);
   const ts = rows[0]?.unix_timestamp ?? 0;
   return ts || 0;
 }
@@ -314,6 +459,11 @@ export async function insertNewWhatsAppMessages(messages: WhatsappMessageRow[]):
   const valid = messages.filter((m) => !!m.phone);
   if (!valid.length) {
     logger.debug({ dropped: messages.length }, "[pg] No valid whatsapp messages to insert (missing phone)");
+    return 0;
+  }
+  const sanitized = await sanitizeWhatsappMessageRows(valid);
+  if (!sanitized.length) {
+    logger.debug({ dropped: valid.length }, "[pg] No valid whatsapp messages to insert (schema limits)");
     return 0;
   }
   const p = getPool();
@@ -331,12 +481,12 @@ export async function insertNewWhatsAppMessages(messages: WhatsappMessageRow[]):
 
   const values: unknown[] = [];
   const placeholders: string[] = [];
-  for (let i = 0; i < valid.length; i++) {
+  for (let i = 0; i < sanitized.length; i++) {
     const base = i * cols.length;
     placeholders.push(
       `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`,
     );
-    const m = valid[i]!;
+    const m = sanitized[i]!;
     values.push(
       m.message_id,
       m.group_id,
@@ -354,11 +504,31 @@ export async function insertNewWhatsAppMessages(messages: WhatsappMessageRow[]):
     VALUES ${placeholders.join(", ")}
     ON CONFLICT (message_id) DO NOTHING
   `;
-  const res = await p.query(sql, values);
-  // rowCount will be 0 when all conflicted; PG may not return per-row inserted count for multi-values
-  // Fallback to messages.length is inaccurate when conflicts happen; try to infer using GET DIAGNOSTICS is complex here.
-  // Return res.rowCount if available, else 0.
-  return res.rowCount ?? 0;
+  try {
+    const res = await p.query(sql, values);
+    // rowCount will be 0 when all conflicted; PG may not return per-row inserted count for multi-values
+    // Fallback to messages.length is inaccurate when conflicts happen; try to infer using GET DIAGNOSTICS is complex here.
+    // Return res.rowCount if available, else 0.
+    return res.rowCount ?? 0;
+  } catch (err) {
+    const pgErr = err as PgErrorLike;
+    const limit = parseVarcharLimit(err);
+    if (pgErr.code === "22001" || limit !== null) {
+      const maxLens = getMaxStringLengths(valid);
+      const effectiveLimit = limit ?? 0;
+      const fieldsOverLimit =
+        effectiveLimit > 0
+          ? Object.entries(maxLens)
+              .filter(([, len]) => len > effectiveLimit)
+              .map(([field]) => field)
+          : [];
+      logger.error(
+        { err, limit: limit ?? undefined, maxLens, fieldsOverLimit },
+        "[pg] whatsapp_messages value too long; check column widths",
+      );
+    }
+    throw err;
+  }
 }
 
 export default { getWhatsappQueue, closePool };

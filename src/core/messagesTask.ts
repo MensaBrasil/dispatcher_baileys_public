@@ -1,5 +1,6 @@
 import { config as configDotenv } from "dotenv";
 import type { WAMessage, WASocket } from "baileys";
+import { createHash } from "node:crypto";
 import { getContentType, getDevice, proto } from "baileys";
 import logger from "../utils/logger.js";
 import { checkPhoneNumber, preprocessPhoneNumbers } from "../utils/phoneCheck.js";
@@ -13,6 +14,28 @@ configDotenv({ path: ".env" });
 type AllowedGroup = { id: string; name: string };
 
 const storeGroupMessageContent = process.env.WPP_STORE_GROUP_MESSAGE_CONTENT === "true";
+const messageIdMaxLenEnv = Number.parseInt(process.env.WPP_MESSAGE_ID_MAXLEN ?? "128", 10);
+const messageIdMaxLen = Number.isFinite(messageIdMaxLenEnv) && messageIdMaxLenEnv > 0 ? messageIdMaxLenEnv : 128;
+const phoneMaxLenEnv = Number.parseInt(process.env.WPP_PHONE_MAXLEN ?? "20", 10);
+const phoneMaxLen = Number.isFinite(phoneMaxLenEnv) && phoneMaxLenEnv > 0 ? phoneMaxLenEnv : 20;
+
+function normalizeMessageId(id: string): string {
+  if (id.length <= messageIdMaxLen) return id;
+  const hash = createHash("sha1").update(id).digest("hex");
+  return hash.length >= messageIdMaxLen ? hash.slice(0, messageIdMaxLen) : hash.padEnd(messageIdMaxLen, "0");
+}
+
+function buildFallbackMessageIdSeed(params: {
+  groupId: string;
+  participant: string;
+  unix: number;
+  messageType: string;
+  deviceType: string;
+  contentText: string | null;
+}): string {
+  const contentPart = params.contentText ?? "";
+  return `${params.groupId}|${params.participant}|${params.unix}|${params.messageType}|${params.deviceType}|${contentPart}`;
+}
 
 function extractTextContent(msg: WAMessage): string | null {
   const ctype = getContentType(msg.message ?? undefined);
@@ -145,7 +168,6 @@ export function createMessageProcessor(
         if (options.filterByLastTimestamp && unix <= minTs) {
           continue;
         }
-        const message_id = m.key.id ?? `${groupId}-${unix}-${Math.random()}`;
         const identity = await resolveParticipantIdentity(m.key.participant ?? m.key.remoteJid ?? "", {
           altJid:
             (m.key as { participantAlt?: string; remoteJidAlt?: string }).participantAlt ??
@@ -153,11 +175,33 @@ export function createMessageProcessor(
           resolveLidToPhone,
         });
         const phoneRaw = identity.phone;
+        if (phoneRaw && /\D/.test(phoneRaw)) {
+          logger.warn({ groupId, phoneRaw, message_id: m.key.id }, "Skipping message with non-digit phone");
+          continue;
+        }
         const phone = phoneRaw ? (phoneRaw.startsWith("55") ? phoneRaw : `55${phoneRaw}`) : null;
+        const message_type = getContentType(m.message ?? undefined) || "unknown";
+        const device_type = getDevice(m.key.id ?? "") || "unknown";
+        const contentText = extractTextContent(m);
+        const content = storeGroupMessageContent ? contentText : null;
+        const participant = m.key.participant ?? m.key.remoteJid ?? "";
+        const fallbackSeed = buildFallbackMessageIdSeed({
+          groupId,
+          participant,
+          unix,
+          messageType: message_type,
+          deviceType: device_type,
+          contentText,
+        });
+        const message_id = normalizeMessageId(m.key.id ?? fallbackSeed);
 
         // We don't insert messages without a resolvable phone number
         if (!phone) {
           logger.debug({ groupId, message_id }, "Skipping message without phone");
+          continue;
+        }
+        if (phone.length > phoneMaxLen) {
+          logger.warn({ groupId, message_id, phoneLength: phone.length }, "Skipping message with phone too long");
           continue;
         }
         if (identity.lid) {
@@ -168,9 +212,6 @@ export function createMessageProcessor(
           const resp = checkPhoneNumber(pmap, phone);
           registration_id = resp.found ? (resp.mb ?? null) : null;
         }
-        const message_type = getContentType(m.message ?? undefined) || "unknown";
-        const device_type = getDevice(m.key.id ?? "") || "unknown";
-        const content = storeGroupMessageContent ? extractTextContent(m) : null;
 
         const row: WhatsappMessageRow = {
           message_id,
