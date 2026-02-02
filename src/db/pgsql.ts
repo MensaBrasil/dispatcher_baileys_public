@@ -222,7 +222,7 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
         p.registration_id AS registration_id,
         g.gender AS gender,
         CASE
-          WHEN med.max_expiration_date > $1 THEN 'Active'
+          WHEN med.max_expiration_date + INTERVAL '14 days' > $1::date THEN 'Active'
           WHEN r.transferred IS TRUE THEN 'Active'
           ELSE 'Inactive'
         END AS status,
@@ -252,7 +252,7 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
         lr.registration_id,
         g.gender AS gender,
         CASE
-          WHEN med.max_expiration_date > $1 THEN 'Active'
+          WHEN med.max_expiration_date + INTERVAL '14 days' > $1::date THEN 'Active'
           WHEN reg.transferred IS TRUE THEN 'Active'
           ELSE 'Inactive'
         END AS status,

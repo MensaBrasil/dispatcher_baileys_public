@@ -65,7 +65,7 @@ export async function ensureTwilioClientReadyOrExit(): Promise<void> {
 export async function triggerTwilioOrRemove(phoneNumber: string, reason: string): Promise<boolean> {
   try {
     const waitingBase = Number(process.env.CONSTANT_WAITING_PERIOD ?? 0);
-    const waitingPeriod = isFinite(waitingBase) ? waitingBase * 1.2 : 0; // ms
+    const waitingPeriod = Number.isFinite(waitingBase) ? waitingBase : 0; // ms
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
     const lastComm = await getLastCommunication(phoneNumber);
     const now = new Date();
