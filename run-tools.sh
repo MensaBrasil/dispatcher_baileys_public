@@ -3,6 +3,7 @@
 echo "Selecione a tool para rodar:"
 echo "1) Dump de grupos (pnpm tools:dump-groups)"
 echo "2) Adicionar worker nas comunidades (pnpm tools:add-worker)"
+echo "3) Enfileirar remoção de contato em todos os grupos (pnpm tools:queue-contact-removal)"
 echo "0) Sair"
 
 printf "Opção: "
@@ -32,6 +33,19 @@ case "$choice" in
     echo "Executando add worker..."
     if pnpm build; then
       pnpm tools:add-worker -- --worker "$worker" $dry_flag
+      exit 0
+    else
+      echo "pnpm build falhou. Corrija o erro e tente novamente."
+      exit 1
+    fi
+    ;;
+  3)
+    printf "Telefone do contato (apenas dígitos ou com +): "
+    read -r phone
+
+    echo "Executando enfileiramento de remoções..."
+    if pnpm build; then
+      pnpm tools:queue-contact-removal -- --phone "$phone"
       exit 0
     else
       echo "pnpm build falhou. Corrija o erro e tente novamente."

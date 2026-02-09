@@ -175,3 +175,15 @@ Observações
   - Observações:
     - Operação limitada a grupos de avisos; não tenta adicionar na comunidade.
     - Campos do relatório por grupo: `action` ∈ `already|dry-run-add|added|failed|skipped` e `error` opcional.
+
+- `tools:queue-contact-removal`
+  - Caminho: `src/tools/queueContactRemoval.ts`
+  - Executa: `pnpm tools:queue-contact-removal -- --phone <telefone>`
+  - O que faz:
+    - Abre sessão Baileys (QR no terminal, se necessário) e busca grupos visíveis pela sessão.
+    - Encontra todos os grupos (regulares, comunidades e announce) em que o telefone informado está presente.
+    - Enfileira um item por grupo em `removeQueue` com:
+      - `type: "remove"`, `registration_id: null`, `groupId`, `phone`, `reason`, `communityId`.
+  - Observações:
+    - Esta tool não limpa a `removeQueue`; apenas adiciona novas remoções.
+    - O telefone é normalizado para apenas dígitos antes da busca/enfileiramento.
