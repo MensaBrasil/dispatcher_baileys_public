@@ -13,7 +13,7 @@ import logger, { sanitizeLevel } from "../utils/logger.js";
 import type { BoomError } from "../types/ErrorTypes.js";
 import { processGroupsBaileys } from "../utils/groups.js";
 import { extractPhoneFromParticipant } from "../utils/jid.js";
-import { sendToQueue, disconnect as disconnectRedis } from "../db/redis.js";
+import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 
 configDotenv({ path: ".env" });
 
@@ -30,7 +30,31 @@ function toDigitsPhone(input: string): string {
   return input.replace(/\D+/g, "");
 }
 
-async function findGroupsForPhone(sock: WASocket, targetPhone: string): Promise<RemovalQueueItem[]> {
+function expandBrazilianPhoneVariants(phone: string): string[] {
+  const digits = toDigitsPhone(phone);
+  const variants = new Set<string>([digits]);
+
+  if (!digits.startsWith("55")) {
+    return [...variants];
+  }
+
+  const dddPrefix = digits.slice(0, 4);
+  const localNumber = digits.slice(4);
+
+  if (localNumber.length === 8) {
+    variants.add(`${dddPrefix}9${localNumber}`);
+  } else if (localNumber.length === 9 && localNumber.startsWith("9")) {
+    variants.add(`${dddPrefix}${localNumber.slice(1)}`);
+  }
+
+  return [...variants];
+}
+
+async function findGroupsForPhone(
+  sock: WASocket,
+  targetPhones: Set<string>,
+  fallbackPhone: string,
+): Promise<RemovalQueueItem[]> {
   const { groups, community, communityAnnounce } = await processGroupsBaileys(sock);
   const allGroups = [...groups, ...community, ...communityAnnounce];
 
@@ -47,10 +71,12 @@ async function findGroupsForPhone(sock: WASocket, targetPhone: string): Promise<
     }
 
     let foundInGroup = false;
+    let matchedPhone: string | null = null;
     for (const participant of group.participants) {
       const participantPhone = await extractPhoneFromParticipant(participant, { resolveLidToPhone });
-      if (participantPhone === targetPhone) {
+      if (participantPhone && targetPhones.has(participantPhone)) {
         foundInGroup = true;
+        matchedPhone = participantPhone;
         break;
       }
     }
@@ -64,7 +90,7 @@ async function findGroupsForPhone(sock: WASocket, targetPhone: string): Promise<
       type: "remove",
       registration_id: null,
       groupId: group.id,
-      phone: targetPhone,
+      phone: matchedPhone ?? fallbackPhone,
       reason: "Manual removal tool request.",
       communityId: group.announceGroup ?? null,
     });
@@ -94,6 +120,7 @@ async function main(): Promise<void> {
     logger.fatal({ phone: opts.phone }, "Telefone inválido");
     process.exit(1);
   }
+  const targetPhones = new Set(expandBrazilianPhoneVariants(targetPhone));
 
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
   const { version } = await fetchLatestBaileysVersion();
@@ -119,12 +146,26 @@ async function main(): Promise<void> {
 
     if (connection === "open") {
       try {
-        const queueItems = await findGroupsForPhone(sock, targetPhone);
+        const queueItems = await findGroupsForPhone(sock, targetPhones, targetPhone);
 
         if (queueItems.length === 0) {
-          logger.warn({ phone: targetPhone }, "Contato não encontrado em nenhum grupo visível pela sessão");
+          logger.warn(
+            { phone: targetPhone, variants: [...targetPhones] },
+            "Contato não encontrado em nenhum grupo visível pela sessão",
+          );
           await safeDisconnectRedis();
           setTimeout(() => process.exit(0), 50);
+          return;
+        }
+
+        const queueCleared = await clearQueue("removeQueue");
+        if (!queueCleared) {
+          logger.error(
+            { phone: targetPhone, queue: "removeQueue" },
+            "Falha ao limpar fila de remoção antes do enfileiramento",
+          );
+          await safeDisconnectRedis();
+          process.exit(1);
           return;
         }
 
