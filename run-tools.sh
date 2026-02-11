@@ -13,7 +13,7 @@ case "$choice" in
   1)
     echo "Executando dump de grupos..."
     if pnpm build; then
-      pnpm tools:dump-groups
+      node dist/tools/dumpGroups.js
       exit 0
     else
       echo "pnpm build falhou. Corrija o erro e tente novamente."
@@ -32,7 +32,11 @@ case "$choice" in
 
     echo "Executando add worker..."
     if pnpm build; then
-      pnpm tools:add-worker -- --worker "$worker" $dry_flag
+      if [[ -n "$dry_flag" ]]; then
+        node dist/tools/addNewWorker.js --worker "$worker" "$dry_flag"
+      else
+        node dist/tools/addNewWorker.js --worker "$worker"
+      fi
       exit 0
     else
       echo "pnpm build falhou. Corrija o erro e tente novamente."
@@ -45,7 +49,7 @@ case "$choice" in
 
     echo "Executando enfileiramento de remoções..."
     if pnpm build; then
-      pnpm tools:queue-contact-removal -- --phone "$phone"
+      node dist/tools/queueContactRemoval.js --phone "$phone"
       exit 0
     else
       echo "pnpm build falhou. Corrija o erro e tente novamente."
