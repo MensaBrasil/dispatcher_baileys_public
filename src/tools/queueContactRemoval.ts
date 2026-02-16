@@ -14,8 +14,10 @@ import type { BoomError } from "../types/ErrorTypes.js";
 import { processGroupsBaileys } from "../utils/groups.js";
 import { extractPhoneFromParticipant } from "../utils/jid.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
+import { buildProtectedPhoneMatcher } from "../utils/phoneList.js";
 
 configDotenv({ path: ".env" });
+const isDontRemoveNumber = buildProtectedPhoneMatcher(process.env.DONT_REMOVE_NUMBERS);
 
 type RemovalQueueItem = {
   type: "remove";
@@ -118,6 +120,10 @@ async function main(): Promise<void> {
   const targetPhone = toDigitsPhone(opts.phone);
   if (!targetPhone || targetPhone.length < 7) {
     logger.fatal({ phone: opts.phone }, "Telefone inválido");
+    process.exit(1);
+  }
+  if (isDontRemoveNumber(targetPhone)) {
+    logger.fatal({ phone: targetPhone }, "Telefone protegido por DONT_REMOVE_NUMBERS e não pode ser removido");
     process.exit(1);
   }
   const targetPhones = new Set(expandBrazilianPhoneVariants(targetPhone));

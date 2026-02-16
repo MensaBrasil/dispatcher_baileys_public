@@ -16,10 +16,11 @@ import {
   type ResolveLidToPhoneFn,
 } from "../utils/jid.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
+import { buildProtectedPhoneMatcher } from "../utils/phoneList.js";
 
 configDotenv({ path: ".env" });
 
-const ignoreNumbers = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
+const isIgnoredNumber = buildProtectedPhoneMatcher(process.env.DONT_REMOVE_NUMBERS);
 const scanDelay = Number.parseInt(process.env.SCAN_DELAY ?? "1", 10) || 0;
 
 type MinimalGroup = {
@@ -94,7 +95,7 @@ export async function scanGroups(
       }
 
       for (const member of groupMembers) {
-        if (ignoreNumbers.includes(member)) {
+        if (isIgnoredNumber(member)) {
           continue;
         }
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);

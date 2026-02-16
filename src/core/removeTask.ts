@@ -14,11 +14,12 @@ import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
 import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/jid.js";
 import type { MinimalGroup } from "../utils/groups.js";
+import { buildProtectedPhoneMatcher, parsePhoneCsv } from "../utils/phoneList.js";
 
 configDotenv({ path: ".env" });
 
-const dontRemove = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
-const exceptions = (process.env.EXCEPTIONS ?? "").split(",").filter(Boolean);
+const isDontRemoveNumber = buildProtectedPhoneMatcher(process.env.DONT_REMOVE_NUMBERS);
+const exceptions = new Set(parsePhoneCsv(process.env.EXCEPTIONS));
 const jbExceptionGroupNames = ["MB | N-SIGs Mensa Brasil", "MB | Xadrez"]; // legacy exceptions
 
 type GroupParticipant = MinimalGroup["participants"][number];
@@ -114,10 +115,11 @@ export async function removeMembersFromGroups(
         });
         if (!member) continue;
 
-        const isDontRemove = dontRemove.includes(member);
-        const isException = exceptions.includes(member);
+        const isDontRemove = isDontRemoveNumber(member);
+        const isException = exceptions.has(member);
         if (isDontRemove) dontRemoveInGroupsCount += 1;
         if (isException) exceptionsInGroupsCount += 1;
+        if (isDontRemove) continue;
 
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
 
@@ -169,20 +171,18 @@ export async function removeMembersFromGroups(
               }
             }
           } else {
-            if (!isDontRemove) {
-              const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
-              if (shouldRemove) {
-                pushRemoval({
-                  type: "remove",
-                  registration_id: null,
-                  groupId,
-                  phone: member,
-                  reason: "Not found in DB",
-                });
-                totalNotFoundCount += 1;
-                uniqueNotFound.add(member);
-                uniquePhones.add(member);
-              }
+            const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
+            if (shouldRemove) {
+              pushRemoval({
+                type: "remove",
+                registration_id: null,
+                groupId,
+                phone: member,
+                reason: "Not found in DB",
+              });
+              totalNotFoundCount += 1;
+              uniqueNotFound.add(member);
+              uniquePhones.add(member);
             }
           }
           continue;
@@ -319,14 +319,12 @@ export async function removeMembersFromGroups(
             }
           }
         } else {
-          if (!isDontRemove) {
-            const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
-            if (shouldRemove) {
-              pushRemoval({ type: "remove", registration_id: null, groupId, phone: member, reason: "Not found in DB" });
-              totalNotFoundCount += 1;
-              uniqueNotFound.add(member);
-              uniquePhones.add(member);
-            }
+          const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
+          if (shouldRemove) {
+            pushRemoval({ type: "remove", registration_id: null, groupId, phone: member, reason: "Not found in DB" });
+            totalNotFoundCount += 1;
+            uniqueNotFound.add(member);
+            uniquePhones.add(member);
           }
         }
       }

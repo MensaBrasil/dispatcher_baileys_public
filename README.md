@@ -89,6 +89,7 @@ O que faz
   - `status = Inactive`: antes de remover, chama `triggerTwilioOrRemove(phone, "mensa_inactive")` para respeitar período de espera/comunicação.
   - Números não encontrados no DB: idem acima, com razão `"mensa_not_found"`.
   - Respeita listas `DONT_REMOVE_NUMBERS` e `EXCEPTIONS` (variáveis de ambiente, separadas por vírgula).
+  - `DONT_REMOVE_NUMBERS` é validado por número completo e também pelos 8 últimos dígitos (cobre variações brasileiras com/sem dígito 9 antes desses 8 dígitos).
 - Para cada decisão de remoção, enfileira item no Redis `removeQueue` com:
   - `type: "remove"`, `registration_id` (ou `null`), `groupId`, `phone`, `reason`, `communityId` (quando disponível).
 - Limpa `removeQueue` antes de inserir e desconecta do Redis ao final.
@@ -133,7 +134,7 @@ Entradas/saídas e formatos
 
 - `MinimalGroup`: `{ id, subject?, name?, participants }`.
 - `phoneNumbersFromDB`: mapa resultante de `preprocessPhoneNumbers(getPhoneNumbersWithStatus())` no orquestrador.
-- Ignora números listados em `DONT_REMOVE_NUMBERS` durante o registro de entradas.
+- Ignora números listados em `DONT_REMOVE_NUMBERS` durante o registro de entradas, com checagem por número completo e pelos 8 últimos dígitos.
 
 Observações
 
