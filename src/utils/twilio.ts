@@ -1,6 +1,6 @@
 import { config as configDotenv } from "dotenv";
 import logger from "./logger.js";
-import { getLastCommunication, logCommunication } from "../db/pgsql.js";
+import { getLastCommunication, getLastCommunicationAnyStatus, logCommunication } from "../db/pgsql.js";
 
 configDotenv({ path: ".env" });
 
@@ -64,9 +64,9 @@ export async function ensureTwilioClientReadyOrExit(): Promise<void> {
 
 export async function triggerTwilioOrRemove(phoneNumber: string, reason: string): Promise<boolean> {
   try {
-    const waitingBase = Number(process.env.CONSTANT_WAITING_PERIOD ?? 0);
-    const waitingPeriod = Number.isFinite(waitingBase) ? waitingBase : 0; // ms
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const waitingBase = Number(process.env.CONSTANT_WAITING_PERIOD ?? oneWeek);
+    const waitingPeriod = Number.isFinite(waitingBase) ? waitingBase : oneWeek; // ms
     const lastComm = await getLastCommunication(phoneNumber);
     const now = new Date();
 
@@ -89,7 +89,22 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
       }
     };
 
-    if (!lastComm || lastComm.reason !== reason) {
+    // Send a single warning per phone before any removal.
+    // Reason changes (inactive <-> not_found) must not reset the waiting timer.
+    if (!lastComm) {
+      const lastAnyComm = await getLastCommunicationAnyStatus(phoneNumber);
+      if (lastAnyComm) {
+        const lastAnyCommTime = new Date(lastAnyComm.timestamp);
+        const elapsedSinceLastWarning = now.getTime() - lastAnyCommTime.getTime();
+        if (elapsedSinceLastWarning <= waitingPeriod) {
+          logger.info(
+            { phoneNumber, reason, lastReason: lastAnyComm.reason, lastStatus: lastAnyComm.status },
+            "Recent warning found; removing without sending a new warning",
+          );
+          return true;
+        }
+      }
+
       await sendTwilio();
       return false; // warned, do not remove yet
     }
@@ -97,12 +112,7 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
     const lastCommTime = new Date(lastComm.timestamp);
     const timeElapsed = now.getTime() - lastCommTime.getTime();
 
-    if (timeElapsed > oneWeek) {
-      await sendTwilio();
-      return false; // warned again
-    }
-
-    if (timeElapsed > waitingPeriod) {
+    if (timeElapsed >= waitingPeriod) {
       logger.info({ phoneNumber, reason }, "Waiting period ended; should remove");
       return true; // safe to remove
     }

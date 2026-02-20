@@ -1,6 +1,7 @@
 import { config as configDotenv } from "dotenv";
 import logger from "../utils/logger.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
+import { resolveCommunications } from "../db/pgsql.js";
 import { triggerTwilioOrRemove } from "../utils/twilio.js";
 import {
   isRegularJBGroup,
@@ -76,6 +77,7 @@ export async function removeMembersFromGroups(
   opts: RemovalOptions = {},
 ): Promise<RemoveSummary> {
   const queueItems: RemovalQueueItem[] = [];
+  const resolvedCommsPhones = new Set<string>();
 
   // Summary accumulators
   const uniquePhones = new Set<string>();
@@ -122,6 +124,15 @@ export async function removeMembersFromGroups(
         if (isDontRemove) continue;
 
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
+
+        if (checkResult.found && checkResult.status === "Active" && !resolvedCommsPhones.has(member)) {
+          try {
+            await resolveCommunications(member);
+            resolvedCommsPhones.add(member);
+          } catch (err) {
+            logger.warn({ err, phone: member }, "Failed to resolve whatsapp communications for active member");
+          }
+        }
 
         const isAJB = isAJBGroup(groupName);
         const isRJB = isRJBGroup(groupName);

@@ -335,10 +335,26 @@ export async function getLastCommunication(phoneNumber: string): Promise<{ reaso
     SELECT reason, timestamp
     FROM whatsapp_comms
     WHERE phone_number = $1
+      AND status = 'unresolved'
     ORDER BY timestamp DESC
     LIMIT 1
   `;
   const { rows } = await p.query<{ reason: string; timestamp: Date }>(query, [phoneNumber]);
+  return rows[0] ?? false;
+}
+
+export async function getLastCommunicationAnyStatus(
+  phoneNumber: string,
+): Promise<{ reason: string; timestamp: Date; status: string } | false> {
+  const p = getPool();
+  const query = `
+    SELECT reason, timestamp, status
+    FROM whatsapp_comms
+    WHERE phone_number = $1
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `;
+  const { rows } = await p.query<{ reason: string; timestamp: Date; status: string }>(query, [phoneNumber]);
   return rows[0] ?? false;
 }
 
@@ -351,6 +367,17 @@ export async function logCommunication(phoneNumber: string, reason: string): Pro
     DO UPDATE SET timestamp = NOW(), status = 'unresolved'
   `;
   await p.query(query, [phoneNumber, reason]);
+}
+
+export async function resolveCommunications(phoneNumber: string): Promise<void> {
+  const p = getPool();
+  const query = `
+    UPDATE whatsapp_comms
+    SET status = 'resolved'
+    WHERE phone_number = $1
+      AND status = 'unresolved'
+  `;
+  await p.query(query, [phoneNumber]);
 }
 
 export async function getPreviousGroupMembers(groupId: string): Promise<string[]> {
