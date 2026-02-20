@@ -78,6 +78,27 @@ export async function removeMembersFromGroups(
 ): Promise<RemoveSummary> {
   const queueItems: RemovalQueueItem[] = [];
   const resolvedCommsPhones = new Set<string>();
+  const twilioDecisionByPhone = new Map<string, boolean>();
+  const twilioReasonByPhone = new Map<string, string>();
+
+  const shouldRemoveAfterTwilio = async (phone: string, reason: string): Promise<boolean> => {
+    const cachedDecision = twilioDecisionByPhone.get(phone);
+    if (cachedDecision !== undefined) {
+      const firstReason = twilioReasonByPhone.get(phone);
+      if (firstReason && firstReason !== reason) {
+        logger.debug(
+          { phone, firstReason, reason },
+          "Reusing Twilio decision already computed for phone in this cycle",
+        );
+      }
+      return cachedDecision;
+    }
+
+    const shouldRemove = await triggerTwilioOrRemove(phone, reason);
+    twilioDecisionByPhone.set(phone, shouldRemove);
+    twilioReasonByPhone.set(phone, reason);
+    return shouldRemove;
+  };
 
   // Summary accumulators
   const uniquePhones = new Set<string>();
@@ -167,7 +188,7 @@ export async function removeMembersFromGroups(
         if (isOrgGroup) {
           if (checkResult.found) {
             if (checkResult.status === "Inactive") {
-              const shouldRemove = await triggerTwilioOrRemove(member, "mensa_inactive");
+              const shouldRemove = await shouldRemoveAfterTwilio(member, "mensa_inactive");
               if (shouldRemove) {
                 pushRemoval({
                   type: "remove",
@@ -182,7 +203,7 @@ export async function removeMembersFromGroups(
               }
             }
           } else {
-            const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
+            const shouldRemove = await shouldRemoveAfterTwilio(member, "mensa_not_found");
             if (shouldRemove) {
               pushRemoval({
                 type: "remove",
@@ -315,7 +336,7 @@ export async function removeMembersFromGroups(
           }
 
           if (checkResult.status === "Inactive") {
-            const shouldRemove = await triggerTwilioOrRemove(member, "mensa_inactive");
+            const shouldRemove = await shouldRemoveAfterTwilio(member, "mensa_inactive");
             if (shouldRemove) {
               pushRemoval({
                 type: "remove",
@@ -330,7 +351,7 @@ export async function removeMembersFromGroups(
             }
           }
         } else {
-          const shouldRemove = await triggerTwilioOrRemove(member, "mensa_not_found");
+          const shouldRemove = await shouldRemoveAfterTwilio(member, "mensa_not_found");
           if (shouldRemove) {
             pushRemoval({ type: "remove", registration_id: null, groupId, phone: member, reason: "Not found in DB" });
             totalNotFoundCount += 1;

@@ -1,6 +1,6 @@
 import { config as configDotenv } from "dotenv";
 import logger from "./logger.js";
-import { getLastCommunication, getLastCommunicationAnyStatus, logCommunication } from "../db/pgsql.js";
+import { getLastCommunication, logCommunication } from "../db/pgsql.js";
 
 configDotenv({ path: ".env" });
 
@@ -89,22 +89,8 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
       }
     };
 
-    // Send a single warning per phone before any removal.
-    // Reason changes (inactive <-> not_found) must not reset the waiting timer.
+    // Send one warning and wait one full period before removing.
     if (!lastComm) {
-      const lastAnyComm = await getLastCommunicationAnyStatus(phoneNumber);
-      if (lastAnyComm) {
-        const lastAnyCommTime = new Date(lastAnyComm.timestamp);
-        const elapsedSinceLastWarning = now.getTime() - lastAnyCommTime.getTime();
-        if (elapsedSinceLastWarning <= waitingPeriod) {
-          logger.info(
-            { phoneNumber, reason, lastReason: lastAnyComm.reason, lastStatus: lastAnyComm.status },
-            "Recent warning found; removing without sending a new warning",
-          );
-          return true;
-        }
-      }
-
       await sendTwilio();
       return false; // warned, do not remove yet
     }
@@ -120,8 +106,8 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
     logger.info({ phoneNumber, reason }, "Waiting period not yet expired; skipping removal");
     return false;
   } catch (error) {
-    logger.error({ err: error }, "Error in triggerTwilioOrRemove; defaulting to remove");
-    return true; // on error, remove
+    logger.error({ err: error }, "Error in triggerTwilioOrRemove; defaulting to keep member");
+    return false;
   }
 }
 
