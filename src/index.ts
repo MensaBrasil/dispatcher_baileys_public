@@ -8,7 +8,7 @@ import type { BoomError } from "./types/ErrorTypes.js";
 import { addMembersToGroups, type AddSummary } from "./core/addTask.js";
 import { removeMembersFromGroups, type RemoveSummary } from "./core/removeTask.js";
 import { scanGroups } from "./core/scanTask.js";
-import { getPhoneNumbersWithStatus, saveGroupsToList, upsertLidMapping } from "./db/pgsql.js";
+import { getActiveWhatsappPolicy, getPhoneNumbersWithStatus, saveGroupsToList, upsertLidMapping } from "./db/pgsql.js";
 import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { delaySecs } from "./utils/delay.js";
 import { Command } from "commander";
@@ -16,12 +16,12 @@ import { processGroupsBaileys } from "./utils/groups.js";
 import type { MinimalGroup } from "./utils/groups.js";
 import type { ResolveLidToPhoneFn } from "./utils/jid.js";
 import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
-import { checkPhoneNumber } from "./utils/phoneCheck.js";
 import { isOrgMBGroup } from "./utils/checkGroupType.js";
 import { buildAllowedGroups, createMessageProcessor } from "./core/messagesTask.js";
 import { MessageStore } from "./store/messageStore.js";
 import { getQueueLength } from "./db/redis.js";
 import { writeFile } from "fs/promises";
+import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
 
 configDotenv({ path: ".env" });
 
@@ -70,26 +70,6 @@ async function main() {
   const actionDelayMin = Number(process.env.ACTION_DELAY_MIN ?? 1);
   const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);
   const actionDelayJitter = Number(process.env.ACTION_DELAY_JITTER ?? 0.5);
-
-  // Sanity check: ensure a known number exists in DB
-  const sanityNumberRaw = process.env.SANITY_CHECK;
-  if (sanityNumberRaw) {
-    try {
-      const rows = await getPhoneNumbersWithStatus();
-      const phoneMap = preprocessPhoneNumbers(rows);
-      const sanitized = sanityNumberRaw.replace(/\D/g, "");
-      const checkResult = checkPhoneNumber(phoneMap, sanitized);
-      if (!checkResult.found) {
-        logger.fatal({ phone: sanitized }, "Sanity check failed: number not found in DB");
-        process.exit(1);
-      } else {
-        logger.info({ phone: sanitized }, "Sanity check passed");
-      }
-    } catch (err) {
-      logger.fatal({ err }, "Sanity check error; exiting");
-      process.exit(1);
-    }
-  }
 
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
   const { version } = await fetchLatestBaileysVersion();
@@ -200,11 +180,17 @@ async function main() {
         logger.warn({ err }, "Failed to save groups list to DB");
       }
 
+      const activePolicy = await getActiveWhatsappPolicy();
+      const isInvitedPhone = buildProtectedPhoneMatcherFromList(activePolicy.invitedPhones);
+      const isSuspendedPhone = buildSuspendedPhoneMatcherFromList(activePolicy.suspendedPhones);
+
       // 1) Add task (id + name/subject)
       let addSummary: AddSummary | undefined;
       if (runAdd) {
         const addTaskGroups = mensaAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
-        addSummary = await addMembersToGroups(addTaskGroups);
+        addSummary = await addMembersToGroups(addTaskGroups, {
+          suspendedRegistrationIds: new Set(activePolicy.suspendedRegistrationIds),
+        });
       }
 
       // Optional delay between actions that may touch services
@@ -222,6 +208,7 @@ async function main() {
       if (runRemove && phoneMap) {
         removeSummary = await removeMembersFromGroups(removalGroups, phoneMap, {
           resolveLidToPhone: lidResolver,
+          policy: { isInvitedPhone, isSuspendedPhone },
         });
       }
 
@@ -248,7 +235,11 @@ async function main() {
             logger.debug({ err, groupId }, "Failed to send seen for group (non-fatal)");
           }
         };
-        await scanGroups(mensaAdminGroups, phoneMap, { sendSeen, resolveLidToPhone: lidResolver });
+        await scanGroups(mensaAdminGroups, phoneMap, {
+          sendSeen,
+          resolveLidToPhone: lidResolver,
+          policy: { isInvitedPhone },
+        });
       }
 
       // End-of-cycle summary (stdout with colors)
@@ -267,6 +258,11 @@ async function main() {
           notAdminCount,
           addSummary,
           removeSummary,
+          policyCounts: {
+            invitedPhones: activePolicy.invitedPhones.length,
+            suspendedPhones: activePolicy.suspendedPhones.length,
+            suspendedRegistrationIds: activePolicy.suspendedRegistrationIds.length,
+          },
           queues: { addQueueLength, removeQueueLength },
         };
 
@@ -327,9 +323,9 @@ async function main() {
         if (addSummary) {
           logger.info(`\x1b[32m• Members awaiting addition: ${addSummary.atleast1PendingAdditionsCount}`);
           logger.info(`• Total pending additions: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
-          if (addSummary.blockedRegistrationsCount > 0) {
+          if (addSummary.suspendedRegistrationsCount > 0) {
             logger.info(
-              `\x1b[33m• Blocked by BLOCKED_MB: ${addSummary.blockedRegistrationsCount} members (${addSummary.blockedRequestsCount} requests skipped)\x1b[0m\n`,
+              `\x1b[33m• Blocked by suspended policy: ${addSummary.suspendedRegistrationsCount} members (${addSummary.suspendedRequestsCount} requests skipped)\x1b[0m\n`,
             );
           }
         } else {
@@ -337,22 +333,19 @@ async function main() {
         }
 
         // Special numbers
-        const dontRemoveList = (process.env.DONT_REMOVE_NUMBERS ?? "").split(",").filter(Boolean);
-        const exceptionsList = (process.env.EXCEPTIONS ?? "").split(",").filter(Boolean);
-
         logger.info("\x1b[1mSpecial Numbers:\x1b[0m");
         if (removeSummary) {
           logger.info(
-            `\x1b[35m• Don't Remove list: ${dontRemoveList.length} numbers (${removeSummary.dontRemoveInGroupsCount} total occurrences)`,
+            `\x1b[35m• Invited list: ${activePolicy.invitedPhones.length} numbers (${removeSummary.invitedInGroupsCount} total occurrences)`,
           );
-
           logger.info(
-            `• Exception list: ${exceptionsList.length} numbers (${removeSummary.exceptionsInGroupsCount} total occurrences)\x1b[0m\n`,
+            `• Suspended list: ${activePolicy.suspendedPhones.length} numbers (${removeSummary.suspendedInGroupsCount} total occurrences)\x1b[0m\n`,
           );
         } else {
-          logger.info(`\x1b[35m• Don't Remove list: ${dontRemoveList.length} numbers (0 total occurrences)`);
-
-          logger.info(`• Exception list: ${exceptionsList.length} numbers (0 total occurrences)\x1b[0m\n`);
+          logger.info(`\x1b[35m• Invited list: ${activePolicy.invitedPhones.length} numbers (0 total occurrences)`);
+          logger.info(
+            `• Suspended list: ${activePolicy.suspendedPhones.length} numbers (0 total occurrences)\x1b[0m\n`,
+          );
         }
 
         // Queues

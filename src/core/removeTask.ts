@@ -15,13 +15,15 @@ import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
 import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/jid.js";
 import type { MinimalGroup } from "../utils/groups.js";
-import { buildProtectedPhoneMatcher, parsePhoneCsv } from "../utils/phoneList.js";
+import type { RemovalPolicy } from "../types/PolicyTypes.js";
 
 configDotenv({ path: ".env" });
 
-const isDontRemoveNumber = buildProtectedPhoneMatcher(process.env.DONT_REMOVE_NUMBERS);
-const exceptions = new Set(parsePhoneCsv(process.env.EXCEPTIONS));
 const jbExceptionGroupNames = ["MB | N-SIGs Mensa Brasil", "MB | Xadrez"]; // legacy exceptions
+const EMPTY_REMOVAL_POLICY: RemovalPolicy = {
+  isInvitedPhone: () => false,
+  isSuspendedPhone: () => false,
+};
 
 type GroupParticipant = MinimalGroup["participants"][number];
 
@@ -48,8 +50,8 @@ export type RemoveSummary = {
   atleast1JBInNonJBCount: number;
   totalAdultNotLegalRepJBCount: number;
   atleast1AdultNotLegalRepJBCount: number;
-  dontRemoveInGroupsCount: number;
-  exceptionsInGroupsCount: number;
+  invitedInGroupsCount: number;
+  suspendedInGroupsCount: number;
   totalNoLongerRepMinorCount: number;
   atleast1NoLongerRepMinorCount: number;
   totalNonLegalRepCount: number;
@@ -69,6 +71,7 @@ type RemovalQueueItem = {
 
 type RemovalOptions = {
   resolveLidToPhone?: ResolveLidToPhoneFn;
+  policy?: RemovalPolicy;
 };
 
 export async function removeMembersFromGroups(
@@ -76,7 +79,9 @@ export async function removeMembersFromGroups(
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
   opts: RemovalOptions = {},
 ): Promise<RemoveSummary> {
-  const queueItems: RemovalQueueItem[] = [];
+  const policy = opts.policy ?? EMPTY_REMOVAL_POLICY;
+  const priorityQueueItems: RemovalQueueItem[] = [];
+  const regularQueueItems: RemovalQueueItem[] = [];
   const resolvedCommsPhones = new Set<string>();
   const twilioDecisionByPhone = new Map<string, boolean>();
   const twilioReasonByPhone = new Map<string, string>();
@@ -114,8 +119,8 @@ export async function removeMembersFromGroups(
   const uniqueJBInNonJB = new Set<string>();
   let totalAdultNotLegalRepJBCount = 0;
   const uniqueAdultNotLegalRepJB = new Set<string>();
-  let dontRemoveInGroupsCount = 0;
-  let exceptionsInGroupsCount = 0;
+  let invitedInGroupsCount = 0;
+  let suspendedInGroupsCount = 0;
   let totalNoLongerRepMinorCount = 0;
   const uniqueNoLongerRepMinor = new Set<string>();
   let totalNonLegalRepCount = 0;
@@ -129,7 +134,14 @@ export async function removeMembersFromGroups(
       const groupName = group.subject ?? group.name ?? "";
       const isOrgGroup = isOrgMBGroup(groupName);
       const communityId = group.announceGroup ?? null;
-      const pushRemoval = (item: Omit<RemovalQueueItem, "communityId">) => queueItems.push({ ...item, communityId });
+      const pushRemoval = (item: Omit<RemovalQueueItem, "communityId">, options?: { priority?: "high" | "normal" }) => {
+        const queueItem = { ...item, communityId };
+        if (options?.priority === "high") {
+          priorityQueueItems.push(queueItem);
+          return;
+        }
+        regularQueueItems.push(queueItem);
+      };
       for (const participant of group.participants) {
         if (isParticipantAdmin(participant)) continue;
 
@@ -138,13 +150,26 @@ export async function removeMembersFromGroups(
         });
         if (!member) continue;
 
-        const isDontRemove = isDontRemoveNumber(member);
-        const isException = exceptions.has(member);
-        if (isDontRemove) dontRemoveInGroupsCount += 1;
-        if (isException) exceptionsInGroupsCount += 1;
-        if (isDontRemove) continue;
+        const isInvited = policy.isInvitedPhone(member);
+        if (isInvited) invitedInGroupsCount += 1;
+        if (isInvited) continue;
 
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
+        if (policy.isSuspendedPhone(member)) {
+          suspendedInGroupsCount += 1;
+          pushRemoval(
+            {
+              type: "remove",
+              registration_id: checkResult.found ? checkResult.mb! : null,
+              groupId,
+              phone: member,
+              reason: "Suspended by policy.",
+            },
+            { priority: "high" },
+          );
+          uniquePhones.add(member);
+          continue;
+        }
 
         if (checkResult.found && checkResult.status === "Active" && !resolvedCommsPhones.has(member)) {
           try {
@@ -171,7 +196,7 @@ export async function removeMembersFromGroups(
         const isJB13To17 = isChild && jb13To17Registration;
         const hasAcceptedTerms = Boolean(checkResult.has_accepted_terms);
 
-        if (checkResult.found && !isException && isUnder13) {
+        if (checkResult.found && isUnder13) {
           pushRemoval({
             type: "remove",
             registration_id: checkResult.mb!,
@@ -291,7 +316,7 @@ export async function removeMembersFromGroups(
         }
 
         if (checkResult.found) {
-          if (!isException && !isAJB) {
+          if (!isAJB) {
             if (isJBGroup && isAdult && !isEffectiveLegalRep) {
               pushRemoval({
                 type: "remove",
@@ -321,7 +346,7 @@ export async function removeMembersFromGroups(
             }
           }
 
-          if (!isException && isNonJB && isJB13To17) {
+          if (isNonJB && isJB13To17) {
             pushRemoval({
               type: "remove",
               registration_id: checkResult.mb!,
@@ -365,7 +390,44 @@ export async function removeMembersFromGroups(
     }
   }
 
-  await clearQueue("removeQueue");
+  const queueItems = [...priorityQueueItems, ...regularQueueItems];
+
+  const queueCleared = await clearQueue("removeQueue");
+  if (!queueCleared) {
+    logger.error({ queue: "removeQueue" }, "Failed to clear removal queue before enqueuing new items");
+    await disconnectRedis();
+    throw new Error("Failed to clear removeQueue");
+  }
+
+  if (queueItems.length === 0) {
+    logger.info("No removal requests generated for this cycle");
+    await disconnectRedis();
+    return {
+      totalRemoveQueueCount: 0,
+      uniqueMembersAffected: uniquePhones.size,
+      totalInactiveCount,
+      atleast1inactiveCount: uniqueInactive.size,
+      totalNotFoundCount,
+      atleast1notfoundCount: uniqueNotFound.size,
+      totalUnder13Count,
+      atleast1Under13Count: uniqueUnder13.size,
+      totalMissingGovTermsCount,
+      atleast1MissingGovTermsCount: uniqueMissingGovTerms.size,
+      totalJBInNonJBCount,
+      atleast1JBInNonJBCount: uniqueJBInNonJB.size,
+      totalAdultNotLegalRepJBCount,
+      atleast1AdultNotLegalRepJBCount: uniqueAdultNotLegalRepJB.size,
+      invitedInGroupsCount,
+      suspendedInGroupsCount,
+      totalNoLongerRepMinorCount,
+      atleast1NoLongerRepMinorCount: uniqueNoLongerRepMinor.size,
+      totalNonLegalRepCount,
+      atleast1NonLegalRepCount: uniqueNonLegalRep.size,
+      totalChildPhoneMismatchCount,
+      atleast1ChildPhoneMismatchCount: uniqueChildPhoneMismatch.size,
+    };
+  }
+
   const result = await sendToQueue(queueItems, "removeQueue");
   if (result) {
     logger.info({ count: queueItems.length }, "Added removal requests to queue");
@@ -388,8 +450,8 @@ export async function removeMembersFromGroups(
     atleast1JBInNonJBCount: uniqueJBInNonJB.size,
     totalAdultNotLegalRepJBCount,
     atleast1AdultNotLegalRepJBCount: uniqueAdultNotLegalRepJB.size,
-    dontRemoveInGroupsCount,
-    exceptionsInGroupsCount,
+    invitedInGroupsCount,
+    suspendedInGroupsCount,
     totalNoLongerRepMinorCount,
     atleast1NoLongerRepMinorCount: uniqueNoLongerRepMinor.size,
     totalNonLegalRepCount,

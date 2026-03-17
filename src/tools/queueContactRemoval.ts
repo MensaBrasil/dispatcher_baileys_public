@@ -14,10 +14,10 @@ import type { BoomError } from "../types/ErrorTypes.js";
 import { processGroupsBaileys } from "../utils/groups.js";
 import { extractPhoneFromParticipant } from "../utils/jid.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
-import { buildProtectedPhoneMatcher } from "../utils/phoneList.js";
+import { buildProtectedPhoneMatcherFromList } from "../utils/phoneList.js";
+import { getActiveWhatsappPolicy } from "../db/pgsql.js";
 
 configDotenv({ path: ".env" });
-const isDontRemoveNumber = buildProtectedPhoneMatcher(process.env.DONT_REMOVE_NUMBERS);
 
 type RemovalQueueItem = {
   type: "remove";
@@ -122,8 +122,10 @@ async function main(): Promise<void> {
     logger.fatal({ phone: opts.phone }, "Telefone inválido");
     process.exit(1);
   }
-  if (isDontRemoveNumber(targetPhone)) {
-    logger.fatal({ phone: targetPhone }, "Telefone protegido por DONT_REMOVE_NUMBERS e não pode ser removido");
+  const policy = await getActiveWhatsappPolicy();
+  const isInvitedNumber = buildProtectedPhoneMatcherFromList(policy.invitedPhones);
+  if (isInvitedNumber(targetPhone)) {
+    logger.fatal({ phone: targetPhone }, "Telefone protegido por invited policy e não pode ser removido");
     process.exit(1);
   }
   const targetPhones = new Set(expandBrazilianPhoneVariants(targetPhone));

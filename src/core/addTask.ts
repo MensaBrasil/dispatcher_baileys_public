@@ -1,29 +1,25 @@
-import { config as configDotenv } from "dotenv";
 import logger from "../utils/logger.js";
 import { getWhatsappQueue, getRegistrationFlags, closePool } from "../db/pgsql.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { checkGroupType } from "../utils/checkGroupType.js";
 import type { GroupType } from "../types/DBTypes.js";
-
-configDotenv({ path: ".env" });
+import type { AddPolicy } from "../types/PolicyTypes.js";
 
 type MinimalGroup = { id: string; subject?: string; name?: string };
 
 export type AddSummary = {
   totalPendingAdditionsCount: number;
   atleast1PendingAdditionsCount: number; // unique registrations awaiting addition
-  blockedRequestsCount: number;
-  blockedRegistrationsCount: number;
+  suspendedRequestsCount: number;
+  suspendedRegistrationsCount: number;
 };
 
-const blockedRegistrations = new Set(
-  (process.env.BLOCKED_MB ?? "")
-    .split(",")
-    .map((id) => Number.parseInt(id.trim(), 10))
-    .filter((id) => Number.isFinite(id)),
-);
+const EMPTY_ADD_POLICY: AddPolicy = { suspendedRegistrationIds: new Set<number>() };
 
-export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSummary> {
+export async function addMembersToGroups(
+  groups: MinimalGroup[],
+  policy: AddPolicy = EMPTY_ADD_POLICY,
+): Promise<AddSummary> {
   const queueItems: Array<{
     type: "add";
     request_id: number;
@@ -43,8 +39,8 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSum
   // Track totals for the cycle
   let totalPending = 0;
   const uniqueRegistrations = new Set<number>();
-  let blockedRequestsCount = 0;
-  const uniqueBlockedRegistrations = new Set<number>();
+  let suspendedRequestsCount = 0;
+  const uniqueSuspendedRegistrations = new Set<number>();
 
   for (const group of groups) {
     const groupId = group.id;
@@ -67,12 +63,12 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSum
     const { groupId, groupName, groupType, requests } = entry;
     for (const request of requests) {
       try {
-        if (blockedRegistrations.has(request.registration_id)) {
-          blockedRequestsCount += 1;
-          uniqueBlockedRegistrations.add(request.registration_id);
+        if (policy.suspendedRegistrationIds.has(request.registration_id)) {
+          suspendedRequestsCount += 1;
+          uniqueSuspendedRegistrations.add(request.registration_id);
           logger.info(
             { registration_id: request.registration_id, groupId, groupName },
-            "Registration blocked from addition; skipping request",
+            "Registration is suspended and blocked from addition; skipping request",
           );
           continue;
         }
@@ -143,8 +139,8 @@ export async function addMembersToGroups(groups: MinimalGroup[]): Promise<AddSum
   return {
     totalPendingAdditionsCount: totalPending,
     atleast1PendingAdditionsCount: uniqueRegistrations.size,
-    blockedRequestsCount,
-    blockedRegistrationsCount: uniqueBlockedRegistrations.size,
+    suspendedRequestsCount,
+    suspendedRegistrationsCount: uniqueSuspendedRegistrations.size,
   };
 }
 

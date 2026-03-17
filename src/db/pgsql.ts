@@ -5,6 +5,7 @@ import logger from "../utils/logger.js";
 import type { DBGroupRequest, WhatsAppWorker } from "../types/DBTypes.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import type { WhatsappMessageRow } from "../types/DBTypes.js";
+import type { ActiveWhatsappPolicy } from "../types/PolicyTypes.js";
 
 configDotenv({ path: ".env" });
 
@@ -327,6 +328,47 @@ export async function getRegistrationFlags(registrationIds: number[]): Promise<M
     flags.set(row.registration_id, row);
   }
   return flags;
+}
+
+export async function getActiveWhatsappPolicy(): Promise<ActiveWhatsappPolicy> {
+  const p = getPool();
+  const invitedQuery = `
+    SELECT phone_number
+    FROM whatsapp_invited_numbers
+    WHERE invited_until IS NULL OR invited_until >= NOW()
+  `;
+  const suspendedQuery = `
+    SELECT phone_number, registration_id
+    FROM whatsapp_suspended_numbers
+    WHERE suspended_until IS NULL OR suspended_until >= NOW()
+  `;
+
+  const [invitedResult, suspendedResult] = await Promise.all([
+    p.query<{ phone_number: string | null }>(invitedQuery),
+    p.query<{ phone_number: string | null; registration_id: number | null }>(suspendedQuery),
+  ]);
+
+  const invitedPhones = new Set<string>();
+  for (const row of invitedResult.rows) {
+    const phone = row.phone_number?.trim();
+    if (phone) invitedPhones.add(phone);
+  }
+
+  const suspendedPhones = new Set<string>();
+  const suspendedRegistrationIds = new Set<number>();
+  for (const row of suspendedResult.rows) {
+    const phone = row.phone_number?.trim();
+    if (phone) suspendedPhones.add(phone);
+    if (row.registration_id !== null && Number.isFinite(row.registration_id)) {
+      suspendedRegistrationIds.add(row.registration_id);
+    }
+  }
+
+  return {
+    invitedPhones: [...invitedPhones],
+    suspendedPhones: [...suspendedPhones],
+    suspendedRegistrationIds: [...suspendedRegistrationIds],
+  };
 }
 
 export async function getLastCommunication(phoneNumber: string): Promise<{ reason: string; timestamp: Date } | false> {

@@ -16,12 +16,11 @@ import {
   type ResolveLidToPhoneFn,
 } from "../utils/jid.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
-import { buildProtectedPhoneMatcher } from "../utils/phoneList.js";
+import type { ScanPolicy } from "../types/PolicyTypes.js";
 
 configDotenv({ path: ".env" });
-
-const isIgnoredNumber = buildProtectedPhoneMatcher(process.env.DONT_REMOVE_NUMBERS);
 const scanDelay = Number.parseInt(process.env.SCAN_DELAY ?? "1", 10) || 0;
+const EMPTY_SCAN_POLICY: ScanPolicy = { isInvitedPhone: () => false };
 
 type MinimalGroup = {
   id: string;
@@ -35,8 +34,9 @@ export type SendSeenFn = (groupId: string) => Promise<void>;
 export async function scanGroups(
   groups: MinimalGroup[],
   phoneNumbersFromDB: Map<string, PhoneNumberStatusRow[]>,
-  opts?: { sendSeen?: SendSeenFn; resolveLidToPhone?: ResolveLidToPhoneFn },
+  opts?: { sendSeen?: SendSeenFn; resolveLidToPhone?: ResolveLidToPhoneFn; policy?: ScanPolicy },
 ): Promise<void> {
+  const policy = opts?.policy ?? EMPTY_SCAN_POLICY;
   for (const group of groups) {
     if (scanDelay > 0) {
       await delaySecs(0, scanDelay);
@@ -95,7 +95,7 @@ export async function scanGroups(
       }
 
       for (const member of groupMembers) {
-        if (isIgnoredNumber(member)) {
+        if (policy.isInvitedPhone(member)) {
           continue;
         }
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);

@@ -8,7 +8,7 @@ Visão geral
 Execução
 
 - CLI: `pnpm start [--add] [--remove] [--scan]`
-  - Sem flags: executa add, remove e (opcionalmente) scan se `ENABLE_SCAN=true`.
+  - Sem flags: executa add, remove e scan.
   - Com flags: executa apenas as tarefas selecionadas.
 - Loop principal: inicia após `connection=open` no Baileys e repete a cada `CYCLE_DELAY_SECONDS`.
 - Delays: controlados por `ACTION_DELAY_MIN`/`ACTION_DELAY_MAX`/`ACTION_DELAY_JITTER` (segundos) e aplicados entre as tarefas.
@@ -19,9 +19,9 @@ Ambiente (variáveis relevantes)
 - `CYCLE_DELAY_SECONDS` (padrão: 1800): intervalo do loop, em segundos.
 - `CYCLE_JITTER_SECONDS` (padrão: 0): jitter aleatório em segundos somado/subtraído do intervalo para evitar padrões.
 - `ACTION_DELAY_MIN` (padrão: 1), `ACTION_DELAY_MAX` (padrão: 3), `ACTION_DELAY_JITTER` (padrão: 0.5): atraso aleatório entre tarefas.
-- `ENABLE_SCAN` (padrão: false): habilita tarefa de scan quando nenhuma flag é passada.
 - `WPP_STORE_GROUP_MESSAGE_CONTENT` (padrão: false): quando `true`, armazena o conteúdo textual das mensagens de grupos no banco de dados.
-- `BLOCKED_MB`: lista de `registration_id` separados por vírgula que não devem ser adicionados a nenhum grupo (são ignorados na addTask).
+- `PAIRING_PHONE`: telefone usado apenas com `--pairing` para gerar código de pareamento.
+- Políticas de proteção/bloqueio agora vêm das tabelas `whatsapp_invited_numbers` e `whatsapp_suspended_numbers` no Postgres.
 - Credenciais de Postgres e Redis: ver `.env.example`.
 
 addTask — addMembersToGroups(groups)
@@ -52,7 +52,7 @@ Regras/filtragem de requisições
   - `no_of_attempts < 3`
   - `fulfilled = false`
   - `last_attempt < now() - 1 day` ou `last_attempt is null`
-- `BLOCKED_MB`: qualquer `registration_id` listado é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
+- `whatsapp_suspended_numbers`: qualquer `registration_id` suspenso é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
 - Cada item é enriquecido com `group_type` conforme heurísticas de `checkGroupType` (ex.: grupos JB/RJB/AJB/MB/OrgMB)
 
 Erros e logs
@@ -88,8 +88,8 @@ O que faz
   - Grupo “R.JB | Familiares de JB 12+”: exige responsável legal que represente JB 13+.
   - `status = Inactive`: antes de remover, chama `triggerTwilioOrRemove(phone, "mensa_inactive")` para respeitar período de espera/comunicação.
   - Números não encontrados no DB: idem acima, com razão `"mensa_not_found"`.
-  - Respeita listas `DONT_REMOVE_NUMBERS` e `EXCEPTIONS` (variáveis de ambiente, separadas por vírgula).
-  - `DONT_REMOVE_NUMBERS` é validado por número completo e também pelos 8 últimos dígitos (cobre variações brasileiras com/sem dígito 9 antes desses 8 dígitos).
+  - Ignora números protegidos por `whatsapp_invited_numbers`.
+  - Remove números suspensos por `whatsapp_suspended_numbers`.
 - Para cada decisão de remoção, enfileira item no Redis `removeQueue` com:
   - `type: "remove"`, `registration_id` (ou `null`), `groupId`, `phone`, `reason`, `communityId` (quando disponível).
 - Limpa `removeQueue` antes de inserir e desconecta do Redis ao final.
@@ -134,7 +134,7 @@ Entradas/saídas e formatos
 
 - `MinimalGroup`: `{ id, subject?, name?, participants }`.
 - `phoneNumbersFromDB`: mapa resultante de `preprocessPhoneNumbers(getPhoneNumbersWithStatus())` no orquestrador.
-- Ignora números listados em `DONT_REMOVE_NUMBERS` durante o registro de entradas, com checagem por número completo e pelos 8 últimos dígitos.
+- Ignora números protegidos por `whatsapp_invited_numbers` durante o registro de entradas.
 
 Observações
 
@@ -186,5 +186,6 @@ Observações
     - Enfileira um item por grupo em `removeQueue` com:
       - `type: "remove"`, `registration_id: null`, `groupId`, `phone`, `reason`, `communityId`.
   - Observações:
-    - Esta tool não limpa a `removeQueue`; apenas adiciona novas remoções.
+    - Esta tool limpa a `removeQueue` antes de enfileirar as novas remoções.
+    - Telefones protegidos por `whatsapp_invited_numbers` não podem ser enfileirados por essa tool.
     - O telefone é normalizado para apenas dígitos antes da busca/enfileiramento.
