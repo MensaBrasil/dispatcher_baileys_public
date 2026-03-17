@@ -21,6 +21,8 @@ Ambiente (variáveis relevantes)
 - `ACTION_DELAY_MIN` (padrão: 1), `ACTION_DELAY_MAX` (padrão: 3), `ACTION_DELAY_JITTER` (padrão: 0.5): atraso aleatório entre tarefas.
 - `WPP_STORE_GROUP_MESSAGE_CONTENT` (padrão: false): quando `true`, armazena o conteúdo textual das mensagens de grupos no banco de dados.
 - `PAIRING_PHONE`: telefone usado apenas com `--pairing` para gerar código de pareamento.
+- `DATABASE_URL`: conexão Postgres usada pelo Prisma para persistir o auth state do Baileys (`WaAuthCreds` e `WaAuthKey`).
+- `WPP_AUTH_SESSION_ID` (padrão: `dispatcher`): session ID compartilhado entre a aplicação principal e as tools.
 - Políticas de proteção/bloqueio agora vêm das tabelas `whatsapp_invited_numbers` e `whatsapp_suspended_numbers` no Postgres.
 - Credenciais de Postgres e Redis: ver `.env.example`.
 
@@ -154,7 +156,7 @@ Observações
       - `groups_dump_<timestamp>.json`: dump completo dos metadados retornados pelo Baileys.
       - `groups_summary_<timestamp>.json`: resumo com totais (comunidades, announces, admin, addressingMode, classificação por nome) e lista de comunidades (id, subject, contagem de subgrupos).
   - Requisitos:
-    - Sessão válida em `./auth` (ou escaneie o QR exibido).
+    - Migração Prisma aplicada para criar `WaAuthCreds`/`WaAuthKey` e uma sessão válida no Postgres (ou escaneie o QR exibido).
     - `.env` para nível de log do Baileys opcional (`BAILEYS_LOG_LEVEL`).
 
 - `tools:add-worker`
@@ -171,7 +173,7 @@ Observações
     - Não realiza promoção a admin (função removida por limitações e erros 400/bad-request observados).
     - Salva relatório detalhado em `tools_results/add_worker_<telefone>_<timestamp>.json` com por-comunidade e por-grupo de avisos.
   - Requisitos:
-    - Sessão válida em `./auth` (QR no terminal, se necessário).
+    - Migração Prisma aplicada para criar `WaAuthCreds`/`WaAuthKey` e uma sessão válida no Postgres (QR no terminal, se necessário).
     - `.env` com Postgres configurado (consulta de `whatsapp_workers`).
   - Observações:
     - Operação limitada a grupos de avisos; não tenta adicionar na comunidade.

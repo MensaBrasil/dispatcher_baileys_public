@@ -1,12 +1,5 @@
 import { config as configDotenv } from "dotenv";
-import {
-  makeWASocket,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  DisconnectReason,
-  Browsers,
-  type WASocket,
-} from "baileys";
+import { makeWASocket, fetchLatestBaileysVersion, DisconnectReason, Browsers, type WASocket } from "baileys";
 import qrcode from "qrcode-terminal";
 import { Command } from "commander";
 import logger, { sanitizeLevel } from "../utils/logger.js";
@@ -16,6 +9,8 @@ import { extractPhoneFromParticipant } from "../utils/jid.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { buildProtectedPhoneMatcherFromList } from "../utils/phoneList.js";
 import { getActiveWhatsappPolicy } from "../db/pgsql.js";
+import { usePostgresAuthState } from "../baileys/use-postgres-auth-state.js";
+import { getAuthPool, getAuthSessionId } from "../db/authStatePg.js";
 
 configDotenv({ path: ".env" });
 
@@ -130,7 +125,7 @@ async function main(): Promise<void> {
   }
   const targetPhones = new Set(expandBrazilianPhoneVariants(targetPhone));
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), getAuthSessionId());
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,
@@ -214,7 +209,7 @@ async function main(): Promise<void> {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] sessão encerrada: apague ./auth e autentique novamente");
+        logger.fatal({ code }, "[wa] sessão encerrada: limpe as linhas de auth no Postgres e autentique novamente");
         process.exit(1);
       }
       logger.warn({ code }, "[wa] conexão fechada antes da conclusão da tool");

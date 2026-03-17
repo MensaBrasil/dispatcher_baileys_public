@@ -1,5 +1,5 @@
 import { config as configDotenv } from "dotenv";
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from "baileys";
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers } from "baileys";
 import type { WASocket } from "baileys";
 import type { WAMessageKey } from "baileys";
 import qrcode from "qrcode-terminal";
@@ -22,6 +22,8 @@ import { getQueueLength } from "./db/redis.js";
 import { writeFile } from "fs/promises";
 import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
 import { runStartupPreflight } from "./startup/preflight.js";
+import { usePostgresAuthState } from "./baileys/use-postgres-auth-state.js";
+import { getAuthPool, getAuthSessionId } from "./db/authStatePg.js";
 
 configDotenv({ path: ".env" });
 
@@ -70,7 +72,7 @@ async function main() {
   const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);
   const actionDelayJitter = Number(process.env.ACTION_DELAY_JITTER ?? 0.5);
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), getAuthSessionId());
   const { version } = await fetchLatestBaileysVersion();
 
   const enableFullHistory = process.env.WPP_SYNC_FULL_HISTORY === "true";
@@ -468,7 +470,10 @@ async function main() {
         const isLoggedOut = code === DisconnectReason.loggedOut;
 
         if (isLoggedOut) {
-          logger.fatal({ code }, "[wa] connection closed: Session logged out. Delete ./auth and link again.");
+          logger.fatal(
+            { code },
+            "[wa] connection closed: Session logged out. Clear the auth rows in Postgres and link again.",
+          );
           process.exit(1);
         }
 

@@ -8,6 +8,9 @@
     "start": "pnpm build && node --max-old-space-size=4096 dist/index.js",
     "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -b",
     "check": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "run-prod": "node --max-old-space-size=4096 dist/index.js",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -26,11 +29,13 @@
     "node": ">=20.19.0"
   },
   "dependencies": {
+    "@prisma/client": "^7.5.0",
     "baileys": "7.0.0-rc.9",
     "commander": "^14.0.3",
     "dotenv": "^17.3.1",
     "pg": "^8.20.0",
     "pino": "^10.3.1",
+    "prisma": "^7.5.0",
     "qrcode-terminal": "^0.12.0",
     "redis": "^5.11.0",
     "twilio": "^5.13.0"

@@ -1,7 +1,6 @@
 import { config as configDotenv } from "dotenv";
 import {
   makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
   Browsers,
@@ -13,6 +12,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import logger, { sanitizeLevel } from "../utils/logger.js";
 import type { BoomError } from "../types/ErrorTypes.js";
+import { usePostgresAuthState } from "../baileys/use-postgres-auth-state.js";
+import { getAuthPool, getAuthSessionId } from "../db/authStatePg.js";
 
 configDotenv({ path: ".env" });
 
@@ -28,7 +29,7 @@ async function main(): Promise<void> {
   const outDir = path.resolve("tools_results");
   await ensureDir(outDir);
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), getAuthSessionId());
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
@@ -167,7 +168,10 @@ async function main(): Promise<void> {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] connection closed: Session logged out. Delete ./auth and link again.");
+        logger.fatal(
+          { code },
+          "[wa] connection closed: Session logged out. Clear the auth rows in Postgres and link again.",
+        );
         process.exit(1);
       }
       logger.warn({ code }, "[wa] connection closed before dumping groups");

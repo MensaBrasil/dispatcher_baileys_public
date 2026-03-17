@@ -1,7 +1,6 @@
 import { config as configDotenv } from "dotenv";
 import {
   makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
   Browsers,
@@ -16,6 +15,8 @@ import type { BoomError } from "../types/ErrorTypes.js";
 import { Command } from "commander";
 import { getAllWhatsAppWorkers } from "../db/pgsql.js";
 import { delaySecs } from "../utils/delay.js";
+import { usePostgresAuthState } from "../baileys/use-postgres-auth-state.js";
+import { getAuthPool, getAuthSessionId } from "../db/authStatePg.js";
 
 configDotenv({ path: ".env" });
 
@@ -65,7 +66,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), getAuthSessionId());
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
@@ -252,7 +253,7 @@ async function main(): Promise<void> {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] sessão encerrada: Apague ./auth e faça login novamente.");
+        logger.fatal({ code }, "[wa] sessão encerrada: limpe as linhas de auth no Postgres e faça login novamente.");
         process.exit(1);
       }
       logger.warn({ code }, "[wa] conexão fechada antes de concluir a ferramenta");
