@@ -82,7 +82,7 @@ async function tableExists(schemaName: string, tableName: string): Promise<boole
 async function hasTablePrivilege(schemaName: string, tableName: string, privilege: PgPrivilege): Promise<boolean> {
   const p = getPool();
   const query = `
-    SELECT has_table_privilege(current_user, format('%I.%I', $1, $2), $3) AS allowed
+    SELECT has_table_privilege(current_user, format('%I.%I', $1::text, $2::text), $3::text) AS allowed
   `;
   const { rows } = await p.query<{ allowed: boolean }>(query, [schemaName, tableName, privilege]);
   return Boolean(rows[0]?.allowed);
