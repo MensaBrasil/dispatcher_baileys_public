@@ -15,13 +15,13 @@ import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
 import type { MinimalGroup } from "./utils/groups.js";
 import type { ResolveLidToPhoneFn } from "./utils/jid.js";
-import { ensureTwilioClientReadyOrExit } from "./utils/twilio.js";
 import { isOrgMBGroup } from "./utils/checkGroupType.js";
 import { buildAllowedGroups, createMessageProcessor } from "./core/messagesTask.js";
 import { MessageStore } from "./store/messageStore.js";
 import { getQueueLength } from "./db/redis.js";
 import { writeFile } from "fs/promises";
 import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
+import { runStartupPreflight } from "./startup/preflight.js";
 
 configDotenv({ path: ".env" });
 
@@ -64,8 +64,7 @@ async function main() {
     "Task configuration resolved",
   );
 
-  // Ensure Twilio is properly configured and available before doing any work
-  await ensureTwilioClientReadyOrExit();
+  await runStartupPreflight();
 
   const actionDelayMin = Number(process.env.ACTION_DELAY_MIN ?? 1);
   const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);

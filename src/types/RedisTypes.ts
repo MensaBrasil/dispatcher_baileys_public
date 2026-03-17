@@ -7,6 +7,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export interface RedisModule {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  runRedisPreflight: () => Promise<void>;
   testRedisConnection: () => Promise<void>;
   sendToQueue: <T extends JsonValue>(items: T[], queueName: QueueName) => Promise<boolean>;
   getAllFromQueue: <T = unknown>(queueName: QueueName) => Promise<T[]>;

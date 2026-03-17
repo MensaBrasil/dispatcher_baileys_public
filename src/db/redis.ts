@@ -62,6 +62,21 @@ async function connect(): Promise<void> {
   }
 }
 
+export async function runRedisPreflight(): Promise<void> {
+  logger.info({ service: "redis" }, "[preflight] starting redis checks");
+
+  try {
+    await connect();
+    const c = getClient();
+    await c.ping();
+  } catch (err) {
+    logger.error({ err, service: "redis" }, "[preflight] redis connectivity check failed");
+    throw new Error("Startup pre-flight failed: Redis connectivity check failed.", { cause: err });
+  }
+
+  logger.info({ service: "redis" }, "[preflight] redis checks passed");
+}
+
 async function disconnect(): Promise<void> {
   if (client && isConnected) {
     try {
@@ -74,8 +89,7 @@ async function disconnect(): Promise<void> {
 
 async function testRedisConnection(): Promise<void> {
   try {
-    await connect();
-    logger.info("Successfully connected to Redis");
+    await runRedisPreflight();
     await disconnect();
   } catch (error) {
     logger.error({ err: error }, "Failed to connect to Redis");
@@ -144,6 +158,7 @@ async function clearQueue(queueName: QueueName): Promise<boolean> {
 const redisModule: RedisModule = {
   connect,
   disconnect,
+  runRedisPreflight,
   testRedisConnection,
   sendToQueue,
   getAllFromQueue,

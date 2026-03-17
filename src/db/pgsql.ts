@@ -12,6 +12,36 @@ configDotenv({ path: ".env" });
 // Shared connection pool
 let pool: Pool | undefined;
 
+type PgPrivilege = "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+
+type PgPreflightTableSpec = {
+  tableName: string;
+  requiredPrivileges: PgPrivilege[];
+};
+
+type PreflightFailure = {
+  service: "postgres";
+  table: string;
+  message: string;
+  missingPrivileges?: PgPrivilege[];
+};
+
+const POSTGRES_PREFLIGHT_TABLE_SPECS: PgPreflightTableSpec[] = [
+  { tableName: "registration", requiredPrivileges: ["SELECT"] },
+  { tableName: "membership_payments", requiredPrivileges: ["SELECT"] },
+  { tableName: "legal_representatives", requiredPrivileges: ["SELECT"] },
+  { tableName: "whatsapp_auth_terms", requiredPrivileges: ["SELECT"] },
+  { tableName: "phones", requiredPrivileges: ["SELECT"] },
+  { tableName: "group_requests", requiredPrivileges: ["SELECT", "UPDATE"] },
+  { tableName: "whatsapp_invited_numbers", requiredPrivileges: ["SELECT"] },
+  { tableName: "whatsapp_suspended_numbers", requiredPrivileges: ["SELECT"] },
+  { tableName: "whatsapp_comms", requiredPrivileges: ["SELECT", "INSERT", "UPDATE"] },
+  { tableName: "member_groups", requiredPrivileges: ["SELECT", "INSERT", "UPDATE"] },
+  { tableName: "group_list", requiredPrivileges: ["INSERT", "DELETE"] },
+  { tableName: "whatsapp_messages", requiredPrivileges: ["SELECT", "INSERT"] },
+  { tableName: "whatsapp_lid_mappings", requiredPrivileges: ["INSERT", "UPDATE"] },
+];
+
 function getPool(): Pool {
   if (!pool) {
     const host = process.env.PGHOST ?? process.env.POSTGRES_HOST ?? "127.0.0.1";
@@ -27,6 +57,110 @@ function getPool(): Pool {
     });
   }
   return pool;
+}
+
+async function getCurrentSchemaName(): Promise<string> {
+  const p = getPool();
+  const { rows } = await p.query<{ schema_name: string | null }>("SELECT current_schema() AS schema_name");
+  return rows[0]?.schema_name ?? "public";
+}
+
+async function tableExists(schemaName: string, tableName: string): Promise<boolean> {
+  const p = getPool();
+  const query = `
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = $1
+        AND table_name = $2
+    ) AS exists
+  `;
+  const { rows } = await p.query<{ exists: boolean }>(query, [schemaName, tableName]);
+  return Boolean(rows[0]?.exists);
+}
+
+async function hasTablePrivilege(schemaName: string, tableName: string, privilege: PgPrivilege): Promise<boolean> {
+  const p = getPool();
+  const query = `
+    SELECT has_table_privilege(current_user, format('%I.%I', $1, $2), $3) AS allowed
+  `;
+  const { rows } = await p.query<{ allowed: boolean }>(query, [schemaName, tableName, privilege]);
+  return Boolean(rows[0]?.allowed);
+}
+
+export async function runPostgresPreflight(): Promise<void> {
+  logger.info({ service: "postgres" }, "[preflight] starting postgres checks");
+
+  const p = getPool();
+
+  try {
+    await p.query("SELECT 1");
+  } catch (err) {
+    logger.error({ err, service: "postgres" }, "[preflight] postgres connectivity check failed");
+    throw new Error("Startup pre-flight failed: Postgres connectivity check failed.", { cause: err });
+  }
+
+  let schemaName: string;
+  try {
+    schemaName = await getCurrentSchemaName();
+  } catch (err) {
+    logger.error({ err, service: "postgres" }, "[preflight] failed to resolve current schema");
+    throw new Error("Startup pre-flight failed: Could not determine Postgres schema.", { cause: err });
+  }
+
+  const failures: PreflightFailure[] = [];
+
+  for (const spec of POSTGRES_PREFLIGHT_TABLE_SPECS) {
+    try {
+      const exists = await tableExists(schemaName, spec.tableName);
+      if (!exists) {
+        failures.push({
+          service: "postgres",
+          table: spec.tableName,
+          message: `Table "${spec.tableName}" not found in schema "${schemaName}".`,
+        });
+        continue;
+      }
+
+      const missingPrivileges: PgPrivilege[] = [];
+      for (const privilege of spec.requiredPrivileges) {
+        const allowed = await hasTablePrivilege(schemaName, spec.tableName, privilege);
+        if (!allowed) missingPrivileges.push(privilege);
+      }
+
+      if (missingPrivileges.length > 0) {
+        failures.push({
+          service: "postgres",
+          table: spec.tableName,
+          missingPrivileges,
+          message: `Missing privileges on "${schemaName}.${spec.tableName}": ${missingPrivileges.join(", ")}.`,
+        });
+      }
+    } catch (err) {
+      failures.push({
+        service: "postgres",
+        table: spec.tableName,
+        message: `Failed to validate "${schemaName}.${spec.tableName}".`,
+      });
+      logger.error(
+        { err, service: "postgres", table: spec.tableName },
+        "[preflight] postgres table validation errored",
+      );
+    }
+  }
+
+  if (failures.length > 0) {
+    logger.error(
+      { service: "postgres", schemaName, failures },
+      "[preflight] postgres schema and privilege validation failed",
+    );
+    throw new Error("Startup pre-flight failed: Postgres schema and privilege validation failed.");
+  }
+
+  logger.info(
+    { service: "postgres", schemaName, tablesChecked: POSTGRES_PREFLIGHT_TABLE_SPECS.length },
+    "[preflight] postgres checks passed",
+  );
 }
 
 type PgErrorLike = { code?: string; message?: string };
