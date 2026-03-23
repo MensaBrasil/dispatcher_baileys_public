@@ -117,11 +117,16 @@ async function main(): Promise<void> {
           JB: 0,
           NotMensa: 0,
         };
+        const groupsNotMensa: string[] = [];
         for (const g of regularGroups) {
           const t = (await checkGroupType(g.subject)) as GT;
           if (t) typeCounts[t] = (typeCounts[t] ?? 0) + 1;
-          else typeCounts.NotMensa += 1;
+          else {
+            typeCounts.NotMensa += 1;
+            groupsNotMensa.push(g.subject ?? g.id);
+          }
         }
+        const groupsIAmNotAdmin = values.filter((g) => !isAdmin(g)).map((g) => g.subject ?? g.id);
 
         const communityGroupsIamAdmin = values
           .filter((g) => Boolean(g.isCommunity) && isAdmin(g))
@@ -151,6 +156,8 @@ async function main(): Promise<void> {
             RJB: typeCounts.RJB,
             AJB: typeCounts.AJB,
           },
+          "Groups not Mensa": groupsNotMensa,
+          "Groups I am not Admin": groupsIAmNotAdmin,
           CommunityGroupsIamAdmin: communityGroupsIamAdmin,
           AnnounceGroupsIamAdmin: announceGroupsIamAdmin,
         };

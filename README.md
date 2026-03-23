@@ -154,7 +154,7 @@ Observações
     - Abre sessão Baileys (QR no terminal, se necessário) e busca todos os grupos com `groupFetchAllParticipating()`.
     - Gera dois arquivos em `tools_results/`:
       - `groups_dump_<timestamp>.json`: dump completo dos metadados retornados pelo Baileys.
-      - `groups_summary_<timestamp>.json`: resumo com totais (comunidades, announces, admin, addressingMode, classificação por nome) e lista de comunidades (id, subject, contagem de subgrupos).
+      - `groups_summary_<timestamp>.json`: resumo com totais (comunidades, announces, admin, addressingMode, classificação por nome), lista de comunidades (id, subject, contagem de subgrupos), grupos `not Mensa` e grupos em que a sessão não é admin.
   - Requisitos:
     - Migração Prisma aplicada para criar `WaAuthCreds`/`WaAuthKey` e uma sessão válida no Postgres (ou escaneie o QR exibido).
     - `.env` para nível de log do Baileys opcional (`BAILEYS_LOG_LEVEL`).
