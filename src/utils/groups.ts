@@ -26,7 +26,7 @@ function hasPhone(x: unknown): x is { phoneNumber?: string } {
   return typeof x === "object" && x !== null && "phoneNumber" in x;
 }
 
-function normalizeUserBase(jid: string | undefined | null): string | null {
+export function normalizeUserBase(jid: string | undefined | null): string | null {
   if (!jid) return null;
   const [user] = jid.split("@", 2);
   if (!user) return null;
@@ -34,7 +34,7 @@ function normalizeUserBase(jid: string | undefined | null): string | null {
   return base ?? null;
 }
 
-function collectMeBases(sock: WASocket): Set<string> {
+export function collectMeBases(sock: WASocket): Set<string> {
   const bases = new Set<string>();
   const candidates = [
     sock.user?.id,
@@ -49,7 +49,7 @@ function collectMeBases(sock: WASocket): Set<string> {
   return bases;
 }
 
-function isAdminForMe(participants: BaileysParticipant[], meBases: Set<string>): boolean {
+export function isAdminForMe(participants: BaileysParticipant[], meBases: Set<string>): boolean {
   if (!meBases.size) return false;
   for (const p of participants) {
     const pid = typeof p === "string" ? p : (p as { id: string }).id;

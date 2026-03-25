@@ -14,6 +14,7 @@ import logger, { sanitizeLevel } from "../utils/logger.js";
 import type { BoomError } from "../types/ErrorTypes.js";
 import { usePostgresAuthState } from "../baileys/use-postgres-auth-state.js";
 import { getAuthPool, getAuthSessionId } from "../db/authStatePg.js";
+import { collectMeBases, isAdminForMe } from "../utils/groups.js";
 
 configDotenv({ path: ".env" });
 
@@ -64,19 +65,9 @@ async function main(): Promise<void> {
         // Build a concise summary
         const values = Object.values(all) as GroupMetadata[];
         const total = values.length;
-        const meBare = sock.user?.id?.split(":")[0];
-        const me = meBare ? `${meBare}@s.whatsapp.net` : undefined;
-        type MaybeJid = { jid?: string };
-        const isMe = (p: GroupParticipant & MaybeJid, meFull: string | undefined) => {
-          if (!meFull) return false;
-          const pid = p.id;
-          const pjid = p.jid;
-          return pid === meFull || pjid === meFull;
-        };
+        const meBases = collectMeBases(sock);
         const isAdmin = (g: GroupMetadata) =>
-          (g.participants || []).some(
-            (p) => isMe(p as GroupParticipant & MaybeJid, me) && Boolean((p as GroupParticipant).admin),
-          );
+          isAdminForMe((g.participants || []) as unknown as GroupParticipant[], meBases);
         const community = values.filter((g) => Boolean(g.isCommunity)).length;
         const communityAnnounce = values.filter((g) => Boolean(g.isCommunityAnnounce)).length;
         const nonCommunity = total - community - communityAnnounce;
