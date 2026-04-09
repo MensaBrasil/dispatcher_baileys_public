@@ -3,28 +3,27 @@ export type Gender = "Masculino" | "Feminino";
 export interface PhoneNumberStatusRow {
   phone_number: string;
   registration_id: number;
-  gender: Gender;
   status: "Active" | "Inactive";
-  jb_under_13: boolean;
-  jb_13_to_17: boolean;
-  is_adult: boolean;
+  phone_role: "member" | "legal_rep";
+  member_age_years: number;
   is_legal_representative: boolean;
-  child_phone_matches_legal_rep: boolean;
-  has_accepted_terms: boolean;
+  is_managed_mb_eligible: boolean;
+  is_managed_rjb_eligible: boolean;
 }
 
 export interface PhoneCheckResult {
   found: boolean;
   status?: "Active" | "Inactive";
   mb?: number;
-  gender?: Gender;
-  jb_under_13?: boolean;
-  jb_13_to_17?: boolean;
-  is_adult?: boolean;
+  has_member_phone?: boolean;
+  has_legal_rep_phone?: boolean;
+  has_member_adult_phone?: boolean;
+  has_member_minor_phone?: boolean;
+  has_legal_rep_for_minor?: boolean;
+  has_legal_rep_for_adult?: boolean;
   is_legal_representative?: boolean;
-  represents_jb_13_to_17?: boolean;
-  has_adult_female?: boolean;
-  represents_minor?: boolean;
-  child_phone_matches_legal_rep?: boolean;
-  has_accepted_terms?: boolean;
+  has_active_mb?: boolean;
+  has_active_rjb?: boolean;
+  has_inactive_mb?: boolean;
+  has_inactive_rjb?: boolean;
 }

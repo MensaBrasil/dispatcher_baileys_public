@@ -6,14 +6,14 @@ import {
   Browsers,
   GroupMetadata,
   GroupParticipant,
+  useMultiFileAuthState,
 } from "baileys";
 import qrcode from "qrcode-terminal";
 import fs from "node:fs/promises";
 import path from "node:path";
 import logger, { sanitizeLevel } from "../utils/logger.js";
 import type { BoomError } from "../types/ErrorTypes.js";
-import { usePostgresAuthState } from "../baileys/use-postgres-auth-state.js";
-import { getAuthPool, getAuthSessionId } from "../db/authStatePg.js";
+import { getAuthStateDir } from "../baileys/auth-state-dir.js";
 import { collectMeBases, isAdminForMe } from "../utils/groups.js";
 
 configDotenv({ path: ".env" });
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   const outDir = path.resolve("tools_results");
   await ensureDir(outDir);
 
-  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), getAuthSessionId());
+  const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
@@ -100,12 +100,10 @@ async function main(): Promise<void> {
         // Classification by group name for non-community groups
         const regularGroups = values.filter((g) => !g.isCommunity && !g.isCommunityAnnounce);
         const { checkGroupType } = await import("../utils/checkGroupType.js");
-        type GT = "MB" | "RJB" | "AJB" | "JB" | null;
+        type GT = "MB" | "RJB" | null;
         const typeCounts: Record<Exclude<GT, null> | "NotMensa", number> = {
           MB: 0,
           RJB: 0,
-          AJB: 0,
-          JB: 0,
           NotMensa: 0,
         };
         const groupsNotMensa: string[] = [];
@@ -143,9 +141,7 @@ async function main(): Promise<void> {
           groupTypes: {
             notMensa: typeCounts.NotMensa,
             MB: typeCounts.MB,
-            JB: typeCounts.JB,
             RJB: typeCounts.RJB,
-            AJB: typeCounts.AJB,
           },
           "Groups not Mensa": groupsNotMensa,
           "Groups I am not Admin": groupsIAmNotAdmin,
@@ -168,7 +164,7 @@ async function main(): Promise<void> {
       if (isLoggedOut) {
         logger.fatal(
           { code },
-          "[wa] connection closed: Session logged out. Clear the auth rows in Postgres and link again.",
+          "[wa] connection closed: Session logged out. Delete the local auth folder and link again.",
         );
         process.exit(1);
       }

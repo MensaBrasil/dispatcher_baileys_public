@@ -2,9 +2,10 @@ function toDigits(value: string): string {
   return value.replace(/\D+/g, "");
 }
 
-function getLast8Digits(value: string): string | null {
-  if (value.length < 8) return null;
-  return value.slice(-8);
+function normalizeForWhatsappLookup(phone: string): string | null {
+  const digits = toDigits(phone);
+  if (!digits) return null;
+  return digits.startsWith("55") ? digits.slice(-8) : digits;
 }
 
 export function expandBrazilianPhoneVariants(phone: string): string[] {
@@ -36,29 +37,29 @@ export function parsePhoneCsv(rawCsv: string | undefined): string[] {
 
 export function buildProtectedPhoneMatcherFromList(phoneNumbers: Iterable<string>): (phone: string) => boolean {
   const normalizedPhones = [...phoneNumbers].map((value) => toDigits(String(value).trim())).filter(Boolean);
-  const exactPhones = new Set<string>(normalizedPhones);
-  const last8Set = new Set<string>(
-    normalizedPhones.map(getLast8Digits).filter((value): value is string => value !== null),
+  const allowedPhones = new Set<string>(
+    normalizedPhones
+      .map((value) => normalizeForWhatsappLookup(value))
+      .filter((value): value is string => value !== null),
   );
 
   return (phone: string): boolean => {
-    const digits = toDigits(phone);
-    if (!digits) return false;
-    if (exactPhones.has(digits)) return true;
-
-    const last8 = getLast8Digits(digits);
-    return last8 !== null && last8Set.has(last8);
+    const lookupKey = normalizeForWhatsappLookup(phone);
+    return lookupKey !== null && allowedPhones.has(lookupKey);
   };
 }
 
 export function buildSuspendedPhoneMatcherFromList(phoneNumbers: Iterable<string>): (phone: string) => boolean {
   const normalizedPhones = [...phoneNumbers].map((value) => toDigits(String(value).trim())).filter(Boolean);
-  const allowedPhones = new Set<string>(normalizedPhones.flatMap((value) => expandBrazilianPhoneVariants(value)));
+  const allowedPhones = new Set<string>(
+    normalizedPhones
+      .map((value) => normalizeForWhatsappLookup(value))
+      .filter((value): value is string => value !== null),
+  );
 
   return (phone: string): boolean => {
-    const digits = toDigits(phone);
-    if (!digits) return false;
-    return allowedPhones.has(digits);
+    const lookupKey = normalizeForWhatsappLookup(phone);
+    return lookupKey !== null && allowedPhones.has(lookupKey);
   };
 }
 

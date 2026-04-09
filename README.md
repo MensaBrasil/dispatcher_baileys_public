@@ -19,11 +19,11 @@ Ambiente (variáveis relevantes)
 - `CYCLE_DELAY_SECONDS` (padrão: 1800): intervalo do loop, em segundos.
 - `CYCLE_JITTER_SECONDS` (padrão: 0): jitter aleatório em segundos somado/subtraído do intervalo para evitar padrões.
 - `ACTION_DELAY_MIN` (padrão: 1), `ACTION_DELAY_MAX` (padrão: 3), `ACTION_DELAY_JITTER` (padrão: 0.5): atraso aleatório entre tarefas.
-- `WPP_STORE_GROUP_MESSAGE_CONTENT` (padrão: false): quando `true`, armazena o conteúdo textual das mensagens de grupos no banco de dados.
 - `PAIRING_PHONE`: telefone usado apenas com `--pairing` para gerar código de pareamento.
-- `DATABASE_URL`: conexão Postgres usada pelo Prisma para persistir o auth state do Baileys (`WaAuthCreds` e `WaAuthKey`).
-- `WPP_AUTH_SESSION_ID` (padrão: `dispatcher`): session ID compartilhado entre a aplicação principal e as tools.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FLOW_SID` e `TWILIO_WHATSAPP_NUMBER`: opcionais. Se faltarem, o dispatcher continua executando e apenas não envia a mensagem pelo Twilio.
+- `IGNORED_ADD_REGISTRATION_IDS`: opcional; lista separada por vírgula de `registration_id` que o dispatcher deve bloquear antes de publicar na `addQueue`.
 - Políticas de proteção/bloqueio agora vêm das tabelas `whatsapp_invited_numbers` e `whatsapp_suspended_numbers` no Postgres.
+- O auth state do Baileys agora fica em arquivos locais dentro de `auth/` (diretório ignorado pelo Git e compartilhado entre a aplicação principal e as tools).
 - Credenciais de Postgres e Redis: ver `.env.example`.
 
 addTask — addMembersToGroups(groups)
@@ -55,6 +55,7 @@ Regras/filtragem de requisições
   - `fulfilled = false`
   - `last_attempt < now() - 1 day` ou `last_attempt is null`
 - `whatsapp_suspended_numbers`: qualquer `registration_id` suspenso é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
+- `IGNORED_ADD_REGISTRATION_IDS`: qualquer `registration_id` listado nessa env é ignorado e não é enfileirado para adição.
 - Cada item é enriquecido com `group_type` conforme heurísticas de `checkGroupType` (ex.: grupos JB/RJB/AJB/MB/OrgMB)
 
 Erros e logs
@@ -156,7 +157,7 @@ Observações
       - `groups_dump_<timestamp>.json`: dump completo dos metadados retornados pelo Baileys.
       - `groups_summary_<timestamp>.json`: resumo com totais (comunidades, announces, admin, addressingMode, classificação por nome), lista de comunidades (id, subject, contagem de subgrupos), grupos `not Mensa` e grupos em que a sessão não é admin.
   - Requisitos:
-    - Migração Prisma aplicada para criar `WaAuthCreds`/`WaAuthKey` e uma sessão válida no Postgres (ou escaneie o QR exibido).
+    - Uma sessão válida no diretório local `auth/` (ou escaneie o QR exibido).
     - `.env` para nível de log do Baileys opcional (`BAILEYS_LOG_LEVEL`).
 
 - `tools:add-worker`
@@ -173,8 +174,8 @@ Observações
     - Não realiza promoção a admin (função removida por limitações e erros 400/bad-request observados).
     - Salva relatório detalhado em `tools_results/add_worker_<telefone>_<timestamp>.json` com por-comunidade e por-grupo de avisos.
   - Requisitos:
-    - Migração Prisma aplicada para criar `WaAuthCreds`/`WaAuthKey` e uma sessão válida no Postgres (QR no terminal, se necessário).
-    - `.env` com Postgres configurado (consulta de `whatsapp_workers`).
+    - Uma sessão válida no diretório local `auth/` (QR no terminal, se necessário).
+    - `.env` com Postgres configurado para consulta de `whatsapp_workers`.
   - Observações:
     - Operação limitada a grupos de avisos; não tenta adicionar na comunidade.
     - Campos do relatório por grupo: `action` ∈ `already|dry-run-add|added|failed|skipped` e `error` opcional.
@@ -188,6 +189,7 @@ Observações
     - Enfileira um item por grupo em `removeQueue` com:
       - `type: "remove"`, `registration_id: null`, `groupId`, `phone`, `reason`, `communityId`.
   - Observações:
+    - Reutiliza a sessão salva localmente em `auth/` e mostra QR apenas se for preciso autenticar de novo.
     - Esta tool limpa a `removeQueue` antes de enfileirar as novas remoções.
     - Telefones protegidos por `whatsapp_invited_numbers` não podem ser enfileirados por essa tool.
     - O telefone é normalizado para apenas dígitos antes da busca/enfileiramento.

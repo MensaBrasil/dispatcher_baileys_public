@@ -39,26 +39,22 @@ async function getTwilioClient(): Promise<TwilioClient | null> {
 }
 
 export async function ensureTwilioClientReadyOrExit(): Promise<void> {
-  // Require full configuration: SID, token, flow SID and WhatsApp number
   if (!accountSid || !authToken || !flowSid || !twilioWhatsAppNumber) {
-    // Fail fast if environment is not properly configured
-    // Using fatal to make it explicit in logs
-
-    logger.fatal(
+    logger.info(
       {
         hasAccountSid: Boolean(accountSid),
         hasAuthToken: Boolean(authToken),
         hasFlowSid: Boolean(flowSid),
         hasWaNumber: Boolean(twilioWhatsAppNumber),
       },
-      "[twilio] missing configuration; exiting",
+      "[twilio] missing configuration; message sending disabled",
     );
-    process.exit(1);
+    return;
   }
+
   const client = await getTwilioClient();
   if (!client) {
-    logger.fatal("[twilio] unable to create client; exiting");
-    process.exit(1);
+    logger.warn("[twilio] unable to create client; message sending disabled");
   }
 }
 
@@ -67,7 +63,7 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
     const waitingBase = Number(process.env.CONSTANT_WAITING_PERIOD ?? oneWeek);
     const waitingPeriod = Number.isFinite(waitingBase) ? waitingBase : oneWeek; // ms
-    const lastComm = await getLastCommunication(phoneNumber);
+    const lastComm = await getLastCommunication(phoneNumber, reason);
     const now = new Date();
 
     const sendTwilio = async (): Promise<void> => {

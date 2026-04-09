@@ -4,6 +4,7 @@ import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/re
 import { checkGroupType } from "../utils/checkGroupType.js";
 import type { GroupType } from "../types/DBTypes.js";
 import type { AddPolicy } from "../types/PolicyTypes.js";
+import { isEligibleRegistrationForGroup } from "../utils/whatsappEligibility.js";
 
 type MinimalGroup = { id: string; subject?: string; name?: string };
 
@@ -12,9 +13,25 @@ export type AddSummary = {
   atleast1PendingAdditionsCount: number; // unique registrations awaiting addition
   suspendedRequestsCount: number;
   suspendedRegistrationsCount: number;
+  ignoredRequestsCount: number;
+  ignoredRegistrationsCount: number;
 };
 
 const EMPTY_ADD_POLICY: AddPolicy = { suspendedRegistrationIds: new Set<number>() };
+
+function parseEnvCsvNumberSet(name: string): Set<number> {
+  const raw = process.env[name];
+  if (!raw?.trim()) return new Set<number>();
+
+  return new Set(
+    raw
+      .split(",")
+      .map((value) => Number.parseInt(value.trim(), 10))
+      .filter(Number.isFinite),
+  );
+}
+
+const IGNORED_ADD_REGISTRATION_IDS = parseEnvCsvNumberSet("IGNORED_ADD_REGISTRATION_IDS");
 
 export async function addMembersToGroups(
   groups: MinimalGroup[],
@@ -41,6 +58,8 @@ export async function addMembersToGroups(
   const uniqueRegistrations = new Set<number>();
   let suspendedRequestsCount = 0;
   const uniqueSuspendedRegistrations = new Set<number>();
+  let ignoredRequestsCount = 0;
+  const uniqueIgnoredRegistrations = new Set<number>();
 
   for (const group of groups) {
     const groupId = group.id;
@@ -63,6 +82,16 @@ export async function addMembersToGroups(
     const { groupId, groupName, groupType, requests } = entry;
     for (const request of requests) {
       try {
+        if (IGNORED_ADD_REGISTRATION_IDS.has(request.registration_id)) {
+          ignoredRequestsCount += 1;
+          uniqueIgnoredRegistrations.add(request.registration_id);
+          logger.info(
+            { registration_id: request.registration_id, groupId, groupName },
+            "Registration is listed in IGNORED_ADD_REGISTRATION_IDS; skipping enqueue",
+          );
+          continue;
+        }
+
         if (policy.suspendedRegistrationIds.has(request.registration_id)) {
           suspendedRequestsCount += 1;
           uniqueSuspendedRegistrations.add(request.registration_id);
@@ -74,37 +103,30 @@ export async function addMembersToGroups(
         }
 
         const flags = registrationFlags.get(request.registration_id);
-        if (!flags) {
+        if (!flags || !groupType) {
           logger.warn(
             { registration_id: request.registration_id, groupId, groupName },
-            "Registration not found when validating age/terms; skipping add",
+            "Registration or managed group type not found when validating add; skipping add",
           );
           continue;
         }
 
-        if (flags.jb_under_13) {
+        if (
+          !isEligibleRegistrationForGroup(
+            {
+              registrationId: flags.registration_id,
+              isActive: flags.is_active,
+              isAdult: flags.is_adult,
+              isMinor: flags.is_minor,
+            },
+            groupType,
+          )
+        ) {
           logger.info(
-            { registration_id: request.registration_id, groupId, groupName },
-            "Under 13 not allowed in WhatsApp groups; skipping add",
+            { registration_id: request.registration_id, groupId, groupName, groupType },
+            "Registration is not eligible for managed group type; skipping add",
           );
           continue;
-        }
-
-        if (groupType === "JB") {
-          if (!flags.jb_13_to_17) {
-            logger.info(
-              { registration_id: request.registration_id, groupId, groupName },
-              "Registration not in JB 13-17 range; skipping add",
-            );
-            continue;
-          }
-          if (!flags.has_accepted_terms) {
-            logger.info(
-              { registration_id: request.registration_id, groupId, groupName },
-              "Missing gov.br authorization; skipping add",
-            );
-            continue;
-          }
         }
 
         const item = {
@@ -141,6 +163,8 @@ export async function addMembersToGroups(
     atleast1PendingAdditionsCount: uniqueRegistrations.size,
     suspendedRequestsCount,
     suspendedRegistrationsCount: uniqueSuspendedRegistrations.size,
+    ignoredRequestsCount,
+    ignoredRegistrationsCount: uniqueIgnoredRegistrations.size,
   };
 }
 

@@ -68,13 +68,23 @@ export async function scanGroups(
       logger.debug({ count: groupMembers.length }, "Current members count");
 
       const wppQueue = await getWhatsappQueue(groupId);
-
-      const last8digitsGroupMembers = new Set(groupMembers.map((m) => m.slice(-8)));
+      const normalizedGroupMembers = new Set(
+        groupMembers
+          .map((m) => {
+            const digits = String(m || "").replace(/\D/g, "");
+            if (!digits) return null;
+            return digits.startsWith("55") ? digits.slice(-8) : digits;
+          })
+          .filter((value): value is string => Boolean(value)),
+      );
       for (const request of wppQueue) {
         const requestPhones = await getMemberPhoneNumbers(request.registration_id);
         for (const phone of requestPhones) {
-          const last8 = phone.slice(-8);
-          if (last8digitsGroupMembers.has(last8)) {
+          const digits = String(phone || "").replace(/\D/g, "");
+          if (!digits) continue;
+          const lookupKey = digits.startsWith("55") ? digits.slice(-8) : digits;
+
+          if (normalizedGroupMembers.has(lookupKey)) {
             await registerWhatsappAddFulfilled(request.request_id);
             logger.info(
               { request_id: request.request_id, phone, group: groupName },

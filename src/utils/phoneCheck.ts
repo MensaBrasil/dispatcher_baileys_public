@@ -41,51 +41,55 @@ export function checkPhoneNumber(
 ): PhoneCheckResult {
   const matchedEntries = phoneNumberMap.get(inputPhoneNumber) ?? [];
 
-  if (matchedEntries.length > 0) {
-    let hasJbUnder13 = false;
-    let hasJb13To17 = false;
-    let hasAdult = false;
-    let hasAdultFemale = false;
-    let isLegalRepresentative = false;
-    let representsJb13To17 = false;
-    let representsMinor = false;
-    let childPhoneMatchesLegalRep = false;
-    let hasAcceptedTerms = false;
-
-    for (const entry of matchedEntries) {
-      if (entry.jb_under_13) hasJbUnder13 = true;
-      if (entry.jb_13_to_17) hasJb13To17 = true;
-      if (entry.is_adult) hasAdult = true;
-      if (entry.gender === "Feminino" && entry.is_adult) hasAdultFemale = true;
-      if (entry.child_phone_matches_legal_rep) childPhoneMatchesLegalRep = true;
-      if (entry.has_accepted_terms) hasAcceptedTerms = true;
-      if (entry.is_legal_representative) {
-        isLegalRepresentative = true;
-        if (entry.jb_13_to_17) representsJb13To17 = true;
-        if (entry.jb_under_13 || entry.jb_13_to_17) representsMinor = true;
-      }
-      if (!entry.is_adult && entry.child_phone_matches_legal_rep) {
-        if (entry.jb_13_to_17) representsJb13To17 = true;
-        if (entry.jb_under_13 || entry.jb_13_to_17) representsMinor = true;
-      }
-    }
-
-    return {
-      found: true,
-      status: matchedEntries[0]!.status,
-      mb: matchedEntries[0]!.registration_id,
-      gender: matchedEntries[0]!.gender,
-      jb_under_13: hasJbUnder13,
-      jb_13_to_17: hasJb13To17,
-      is_adult: hasAdult,
-      is_legal_representative: isLegalRepresentative,
-      represents_jb_13_to_17: representsJb13To17,
-      represents_minor: representsMinor,
-      has_adult_female: hasAdultFemale,
-      child_phone_matches_legal_rep: childPhoneMatchesLegalRep,
-      has_accepted_terms: hasAcceptedTerms,
-    };
+  if (matchedEntries.length === 0) {
+    return { found: false };
   }
 
-  return { found: false };
+  let hasMemberPhone = false;
+  let hasLegalRepPhone = false;
+  let hasMemberAdultPhone = false;
+  let hasMemberMinorPhone = false;
+  let hasLegalRepForMinor = false;
+  let hasLegalRepForAdult = false;
+  let hasActiveMB = false;
+  let hasActiveRJB = false;
+  let hasInactiveMB = false;
+  let hasInactiveRJB = false;
+
+  for (const entry of matchedEntries) {
+    if (entry.phone_role === "member") hasMemberPhone = true;
+    if (entry.phone_role === "legal_rep") hasLegalRepPhone = true;
+    if (entry.phone_role === "member" && entry.member_age_years >= 18) hasMemberAdultPhone = true;
+    if (entry.phone_role === "member" && entry.member_age_years <= 17) hasMemberMinorPhone = true;
+    if (entry.phone_role === "legal_rep" && entry.member_age_years <= 17) hasLegalRepForMinor = true;
+    if (entry.phone_role === "legal_rep" && entry.member_age_years >= 18) hasLegalRepForAdult = true;
+
+    if (entry.status === "Active" && entry.is_managed_mb_eligible) hasActiveMB = true;
+    if (entry.status === "Active" && entry.is_managed_rjb_eligible) hasActiveRJB = true;
+    if (entry.status === "Inactive" && entry.phone_role === "member" && entry.member_age_years >= 18)
+      hasInactiveMB = true;
+    if (entry.status === "Inactive" && entry.phone_role === "legal_rep" && entry.member_age_years <= 17) {
+      hasInactiveRJB = true;
+    }
+  }
+
+  const primary = matchedEntries[0]!;
+  const status: "Active" | "Inactive" = hasActiveMB || hasActiveRJB ? "Active" : "Inactive";
+
+  return {
+    found: true,
+    status,
+    mb: primary.registration_id,
+    has_member_phone: hasMemberPhone,
+    has_legal_rep_phone: hasLegalRepPhone,
+    has_member_adult_phone: hasMemberAdultPhone,
+    has_member_minor_phone: hasMemberMinorPhone,
+    has_legal_rep_for_minor: hasLegalRepForMinor,
+    has_legal_rep_for_adult: hasLegalRepForAdult,
+    is_legal_representative: hasLegalRepPhone,
+    has_active_mb: hasActiveMB,
+    has_active_rjb: hasActiveRJB,
+    has_inactive_mb: hasInactiveMB,
+    has_inactive_rjb: hasInactiveRJB,
+  };
 }

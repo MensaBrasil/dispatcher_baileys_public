@@ -1,7 +1,6 @@
 import { config as configDotenv } from "dotenv";
-import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers } from "baileys";
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers, useMultiFileAuthState } from "baileys";
 import type { WASocket } from "baileys";
-import type { WAMessageKey } from "baileys";
 import qrcode from "qrcode-terminal";
 import logger, { sanitizeLevel } from "./utils/logger.js";
 import type { BoomError } from "./types/ErrorTypes.js";
@@ -13,17 +12,13 @@ import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { delaySecs } from "./utils/delay.js";
 import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
-import type { MinimalGroup } from "./utils/groups.js";
 import type { ResolveLidToPhoneFn } from "./utils/jid.js";
-import { isOrgMBGroup } from "./utils/checkGroupType.js";
-import { buildAllowedGroups, createMessageProcessor } from "./core/messagesTask.js";
-import { MessageStore } from "./store/messageStore.js";
+import { checkGroupType } from "./utils/checkGroupType.js";
 import { getQueueLength } from "./db/redis.js";
 import { writeFile } from "fs/promises";
 import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
 import { runStartupPreflight } from "./startup/preflight.js";
-import { usePostgresAuthState } from "./baileys/use-postgres-auth-state.js";
-import { getAuthPool, getAuthSessionId } from "./db/authStatePg.js";
+import { getAuthStateDir } from "./baileys/auth-state-dir.js";
 
 configDotenv({ path: ".env" });
 
@@ -72,11 +67,9 @@ async function main() {
   const actionDelayMax = Number(process.env.ACTION_DELAY_MAX ?? 3);
   const actionDelayJitter = Number(process.env.ACTION_DELAY_JITTER ?? 0.5);
 
-  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), getAuthSessionId());
+  const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
   const { version } = await fetchLatestBaileysVersion();
 
-  const enableFullHistory = process.env.WPP_SYNC_FULL_HISTORY === "true";
-  const messageStore = await MessageStore.create({ filePath: process.env.MESSAGE_STORE_PATH });
   let sock: WASocket;
 
   const lidResolver: ResolveLidToPhoneFn = async (lid) =>
@@ -133,9 +126,6 @@ async function main() {
   let isCycleRunning = false;
   let pendingImmediateRunOnOpen = false;
 
-  let messageProcessor: ReturnType<typeof createMessageProcessor> | undefined;
-  let _latestAllowedGroupsForMessages: MinimalGroup[] | undefined;
-
   async function runCycleOnce() {
     try {
       if (!isConnected) {
@@ -152,30 +142,20 @@ async function main() {
       // Fetch and classify groups using Baileys
       const { groups, adminGroups, community, communityAnnounce, adminCommunity, adminCommunityAnnounce } =
         await processGroupsBaileys(sock);
-      // Filter out OrgMB groups only (keep all others) and then apply Mensa classification for message history
-      const adminNonOrg = adminGroups.filter((g) => !isOrgMBGroup(g.subject ?? g.name ?? ""));
-      const mensaAdminGroups = adminNonOrg;
+      const managedAdminGroups = [];
+      for (const group of adminGroups) {
+        const groupType = await checkGroupType(group.subject ?? group.name ?? "");
+        if (groupType) managedAdminGroups.push(group);
+      }
       const removalAdminGroups = adminGroups;
       const removalCommunityGroups = adminCommunity;
       const removalCommunityAnnounceGroups = adminCommunityAnnounce;
       const removalGroups = communityMode
         ? [...removalCommunityGroups, ...removalCommunityAnnounceGroups]
         : [...removalAdminGroups, ...removalCommunityGroups, ...removalCommunityAnnounceGroups];
-
-      // Build allowed groups for message sync (Mensa groups except OrgMB)
+      // Update DB with current managed groups list.
       try {
-        const allowedGroups = await buildAllowedGroups(adminNonOrg);
-        _latestAllowedGroupsForMessages = adminNonOrg;
-        messageProcessor = createMessageProcessor(sock, allowedGroups, {
-          filterByLastTimestamp: true,
-          dbBatchSize: Math.max(1, Number(process.env.WPP_MSG_DB_BATCH ?? 200)),
-        });
-      } catch (err) {
-        logger.warn({ err }, "Failed to build message processor allowed groups");
-      }
-      // Update DB with current groups list (OrgMB already excluded)
-      try {
-        const toSave = mensaAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
+        const toSave = managedAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
         await saveGroupsToList(toSave);
       } catch (err) {
         logger.warn({ err }, "Failed to save groups list to DB");
@@ -188,7 +168,7 @@ async function main() {
       // 1) Add task (id + name/subject)
       let addSummary: AddSummary | undefined;
       if (runAdd) {
-        const addTaskGroups = mensaAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
+        const addTaskGroups = managedAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
         addSummary = await addMembersToGroups(addTaskGroups, {
           suspendedRegistrationIds: new Set(activePolicy.suspendedRegistrationIds),
         });
@@ -219,25 +199,7 @@ async function main() {
 
       // 4) Scan task
       if (runScan && phoneMap) {
-        const sendSeen = async (groupId: string) => {
-          try {
-            const last = messageStore.getLastKeyForGroup(groupId);
-            if (!last) return;
-            await sock.readMessages([
-              {
-                remoteJid: groupId,
-                id: last.id,
-                fromMe: false,
-                participant: last.participant ?? undefined,
-              },
-            ]);
-            logger.debug({ groupId, id: last.id }, "Sent seen for last message in group");
-          } catch (err) {
-            logger.debug({ err, groupId }, "Failed to send seen for group (non-fatal)");
-          }
-        };
-        await scanGroups(mensaAdminGroups, phoneMap, {
-          sendSeen,
+        await scanGroups(managedAdminGroups, phoneMap, {
           resolveLidToPhone: lidResolver,
           policy: { isInvitedPhone },
         });
@@ -254,7 +216,7 @@ async function main() {
         const details = {
           totalGroupsAll,
           nonCommunityGroups: groups.length,
-          adminGroupsProcessed: mensaAdminGroups.length,
+          adminGroupsProcessed: managedAdminGroups.length,
           removalGroupsProcessed,
           notAdminCount,
           addSummary,
@@ -272,7 +234,7 @@ async function main() {
         logger.info("\n\x1b[1m=== REMOVAL REPORT SUMMARY ===\x1b[0m");
         // High-level counts
         logger.info(`\x1b[36mTotal groups: ${totalGroupsAll}\x1b[0m`);
-        logger.info(`\x1b[36mTotal groups processed (add/scan): ${mensaAdminGroups.length}\x1b[0m`);
+        logger.info(`\x1b[36mTotal groups processed (add/scan): ${managedAdminGroups.length}\x1b[0m`);
         logger.info(`\x1b[36mTotal groups processed for removal (incl. community): ${removalGroupsProcessed}\x1b[0m`);
         logger.info(`\x1b[31mBot is not admin in: ${notAdminCount} groups\x1b[0m\n`);
 
@@ -291,29 +253,21 @@ async function main() {
           );
 
           logger.info(
-            `• Under 13 in any group: ${removeSummary.atleast1Under13Count} members (${removeSummary.totalUnder13Count} total occurrences)`,
+            `• Not eligible for MB: ${removeSummary.atleast1IneligibleMBCount} members (${removeSummary.totalIneligibleMBCount} total occurrences)`,
+          );
+          logger.info(
+            `• Not eligible for RJB: ${removeSummary.atleast1IneligibleRJBCount} members (${removeSummary.totalIneligibleRJBCount} total occurrences)\x1b[0m\n`,
           );
 
-          logger.info(
-            `• Missing gov.br authorization (JB 13-17): ${removeSummary.atleast1MissingGovTermsCount} members (${removeSummary.totalMissingGovTermsCount} total occurrences)`,
-          );
-
-          logger.info(
-            `• Adult not legal representative in JB: ${removeSummary.atleast1AdultNotLegalRepJBCount} members (${removeSummary.totalAdultNotLegalRepJBCount} total occurrences)`,
-          );
-
-          logger.info(
-            `• Adult not legal representative in R.JB: ${removeSummary.atleast1NonLegalRepCount} members (${removeSummary.totalNonLegalRepCount} total occurrences)`,
-          );
-          logger.info(
-            `• Legal rep no longer represents a minor (18+): ${removeSummary.atleast1NoLongerRepMinorCount} members (${removeSummary.totalNoLongerRepMinorCount} total occurrences)`,
-          );
-          logger.info(
-            `• Children without matching legal rep phones in R.JB: ${removeSummary.atleast1ChildPhoneMismatchCount} members (${removeSummary.totalChildPhoneMismatchCount} total occurrences)`,
-          );
-          logger.info(
-            `• JB in non-JB: ${removeSummary.atleast1JBInNonJBCount} members (${removeSummary.totalJBInNonJBCount} total occurrences)\x1b[0m\n`,
-          );
+          if (removeSummary.removalReasons.length > 0) {
+            logger.info("\x1b[1mSpecific Removal Reasons:\x1b[0m");
+            for (const item of removeSummary.removalReasons) {
+              logger.info(
+                `• ${item.reason}: ${item.uniqueMembers} members (${item.totalOccurrences} total occurrences)`,
+              );
+            }
+            logger.info("");
+          }
         } else {
           logger.info("• No removals evaluated this cycle.\x1b[0m\n");
         }
@@ -324,6 +278,11 @@ async function main() {
         if (addSummary) {
           logger.info(`\x1b[32m• Members awaiting addition: ${addSummary.atleast1PendingAdditionsCount}`);
           logger.info(`• Total pending additions: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
+          if (addSummary.ignoredRegistrationsCount > 0) {
+            logger.info(
+              `\x1b[33m• Ignored by env config: ${addSummary.ignoredRegistrationsCount} members (${addSummary.ignoredRequestsCount} requests skipped)\x1b[0m`,
+            );
+          }
           if (addSummary.suspendedRegistrationsCount > 0) {
             logger.info(
               `\x1b[33m• Blocked by suspended policy: ${addSummary.suspendedRegistrationsCount} members (${addSummary.suspendedRequestsCount} requests skipped)\x1b[0m\n`,
@@ -431,8 +390,6 @@ async function main() {
       logger: logger.child({ module: "baileys" }, { level: sanitizeLevel(process.env.BAILEYS_LOG_LEVEL, "fatal") }),
       printQRInTerminal: false,
       markOnlineOnConnect: false,
-      syncFullHistory: enableFullHistory,
-      getMessage: async (key) => messageStore.getMessage({ id: key.id }),
     });
 
     await requestPairingCodeIfNeeded(sock);
@@ -472,7 +429,7 @@ async function main() {
         if (isLoggedOut) {
           logger.fatal(
             { code },
-            "[wa] connection closed: Session logged out. Clear the auth rows in Postgres and link again.",
+            "[wa] connection closed: Session logged out. Delete the local auth folder and link again.",
           );
           process.exit(1);
         }
@@ -511,51 +468,6 @@ async function main() {
         }
       } catch (err) {
         logger.debug({ err }, "Failed to handle lid-mapping.update event (non-fatal)");
-      }
-    });
-
-    // Handle message history & live messages
-    s.ev.on("messaging-history.set", async ({ messages, progress, isLatest, syncType }) => {
-      try {
-        if (!messageProcessor) return;
-        const count = await messageProcessor.processMessages(messages);
-        // Update local message store (id + last per group)
-        messageStore.updateFromMessages(messages);
-        logger.info(
-          { received: messages.length, inserted: count, progress, isLatest, syncType },
-          "Processed history messages batch",
-        );
-      } catch (err) {
-        logger.error({ err }, "Failed processing messaging-history.set");
-      }
-    });
-
-    s.ev.on("messages.upsert", async ({ messages, type }) => {
-      try {
-        if (!messageProcessor) return;
-        const count = await messageProcessor.processMessages(messages);
-        // Update local message store
-        messageStore.updateFromMessages(messages);
-        // Mark all new incoming (not from me) messages as read
-        try {
-          const keys: WAMessageKey[] = [];
-          for (const m of messages) {
-            const id = m.key.id;
-            const jid = m.key.remoteJid;
-            if (!id || !jid) continue;
-            if (m.key.fromMe) continue;
-            keys.push({ id, remoteJid: jid, fromMe: false, participant: m.key.participant ?? undefined });
-          }
-          if (keys.length) {
-            await s.readMessages(keys);
-            logger.debug({ count: keys.length }, "Marked new messages as read");
-          }
-        } catch (err) {
-          logger.debug({ err }, "Failed to mark new messages as read (non-fatal)");
-        }
-        logger.debug({ received: messages.length, inserted: count, type }, "Processed live messages upsert");
-      } catch (err) {
-        logger.error({ err }, "Failed processing messages.upsert");
       }
     });
   }
