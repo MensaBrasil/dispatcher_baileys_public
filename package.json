@@ -15,6 +15,7 @@
     "fmt:write": "prettier . --write",
     "get-queues": "node dist/tools/getRedisQueue.js",
     "tools:dump-groups": "pnpm build && node dist/tools/dumpGroups.js",
+    "tools:dump-admin-groups": "pnpm build && node dist/tools/dumpAdminGroups.js",
     "tools:add-worker": "pnpm build && node dist/tools/addNewWorker.js",
     "tools:queue-contact-removal": "pnpm build && node dist/tools/queueContactRemoval.js",
     "test": "echo \"Error: no test specified\" && exit 1"

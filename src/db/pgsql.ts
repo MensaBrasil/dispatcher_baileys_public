@@ -272,6 +272,51 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
   return rows;
 }
 
+export type RegistrationPhoneLookupRow = {
+  phone_number: string;
+  registration_id: number;
+  name: string | null;
+  source: "member" | "legal_rep" | "legal_rep_alternative";
+};
+
+export async function getRegistrationPhoneLookupRows(): Promise<RegistrationPhoneLookupRow[]> {
+  const p = getPool();
+  const query = `
+    SELECT
+      p.phone_number,
+      p.registration_id,
+      r.name,
+      'member'::text AS source
+    FROM phones p
+    LEFT JOIN registration r ON r.registration_id = p.registration_id
+
+    UNION ALL
+
+    SELECT
+      lr.phone AS phone_number,
+      lr.registration_id,
+      r.name,
+      'legal_rep'::text AS source
+    FROM legal_representatives lr
+    LEFT JOIN registration r ON r.registration_id = lr.registration_id
+    WHERE lr.phone IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+      lr.alternative_phone AS phone_number,
+      lr.registration_id,
+      r.name,
+      'legal_rep_alternative'::text AS source
+    FROM legal_representatives lr
+    LEFT JOIN registration r ON r.registration_id = lr.registration_id
+    WHERE lr.alternative_phone IS NOT NULL
+  `;
+
+  const { rows } = await p.query<RegistrationPhoneLookupRow>(query);
+  return rows;
+}
+
 export type RegistrationFlags = {
   registration_id: number;
   is_active: boolean;

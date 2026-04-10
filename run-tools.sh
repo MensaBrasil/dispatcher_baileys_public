@@ -2,8 +2,9 @@
 
 echo "Selecione a tool para rodar:"
 echo "1) Dump de grupos (pnpm tools:dump-groups)"
-echo "2) Adicionar worker nas comunidades (pnpm tools:add-worker)"
-echo "3) Enfileirar remoção de contato em todos os grupos (pnpm tools:queue-contact-removal)"
+echo "2) Dump de grupos onde o socket é admin (pnpm tools:dump-admin-groups)"
+echo "3) Adicionar worker nas comunidades (pnpm tools:add-worker)"
+echo "4) Enfileirar remoção de contato em todos os grupos (pnpm tools:queue-contact-removal)"
 echo "0) Sair"
 
 printf "Opção: "
@@ -21,6 +22,16 @@ case "$choice" in
     fi
     ;;
   2)
+    echo "Executando dump de grupos administrados..."
+    if pnpm build; then
+      node dist/tools/dumpAdminGroups.js
+      exit 0
+    else
+      echo "pnpm build falhou. Corrija o erro e tente novamente."
+      exit 1
+    fi
+    ;;
+  3)
     printf "Telefone do worker (apenas dígitos ou com +): "
     read -r worker
     printf "Rodar em modo dry-run? (s/N): "
@@ -43,7 +54,7 @@ case "$choice" in
       exit 1
     fi
     ;;
-  3)
+  4)
     printf "Telefone do contato (apenas dígitos ou com +): "
     read -r phone
 
