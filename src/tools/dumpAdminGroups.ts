@@ -27,12 +27,17 @@ type RegistrationLookupValue = {
   name: string | null;
 };
 
-type GroupAdminReportEntry = {
-  groupId: string;
-  groupName: string;
-  adminPhone: string;
-  name: string;
+type AdminEntry = {
+  telefone: string;
+  nome: string;
   mb: number | string;
+  papel: "admin" | "superadmin";
+};
+
+type GroupAdminReportEntry = {
+  id_grupo: string;
+  nome_grupo: string;
+  administradores: AdminEntry[];
 };
 
 async function ensureDir(dir: string): Promise<void> {
@@ -111,17 +116,6 @@ function findRegistrationByPhone(
   return null;
 }
 
-function getFallbackPhoneFromMeBases(meBases: Set<string>): string | null {
-  for (const base of meBases) {
-    const digits = toDigitsPhone(base);
-    if (isLikelyBrazilianPhone(digits)) {
-      return digits;
-    }
-  }
-
-  return null;
-}
-
 async function findMyAdminPhoneForGroup(
   group: MinimalGroup,
   meBases: Set<string>,
@@ -152,6 +146,61 @@ async function findMyAdminPhoneForGroup(
   return null;
 }
 
+function getParticipantAdminRole(participant: MinimalGroup["participants"][number]): "admin" | "superadmin" | null {
+  if (participant && typeof participant === "object" && "admin" in participant) {
+    const role = (participant as { admin?: unknown }).admin;
+    if (role === "admin" || role === "superadmin") {
+      return role;
+    }
+  }
+
+  return null;
+}
+
+function getParticipantBase(participant: MinimalGroup["participants"][number]): string | null {
+  const participantId = typeof participant === "string" ? participant : (participant as { id?: string }).id;
+  const participantJid = typeof participant === "string" ? undefined : (participant as { jid?: string }).jid;
+  const participantPhone =
+    typeof participant === "string" ? undefined : (participant as { phoneNumber?: string }).phoneNumber;
+
+  return normalizeUserBase(participantId) ?? normalizeUserBase(participantJid) ?? normalizeUserBase(participantPhone);
+}
+
+async function buildAdminEntriesForGroup(
+  group: MinimalGroup,
+  meBases: Set<string>,
+  resolveLidToPhone: (lid: string) => Promise<string | null>,
+  phoneLookup: Map<string, RegistrationLookupValue>,
+): Promise<AdminEntry[]> {
+  const admins: AdminEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const participant of group.participants) {
+    const role = getParticipantAdminRole(participant);
+    if (!role) continue;
+
+    const participantBase = getParticipantBase(participant);
+    const extractedPhone = await extractPhoneFromParticipant(participant, { resolveLidToPhone });
+    const resolvedPhone = extractedPhone ?? (isLikelyBrazilianPhone(participantBase) ? participantBase : null);
+    const registration = findRegistrationByPhone(phoneLookup, resolvedPhone);
+    const dedupeKey = resolvedPhone ?? participantBase ?? JSON.stringify(participant);
+
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+
+    admins.push({
+      telefone: resolvedPhone ?? PHONE_NOT_RESOLVED,
+      nome: registration?.name?.trim() || NOT_FOUND_IN_DB,
+      mb: registration?.registration_id ?? NOT_FOUND_IN_DB,
+      papel: role,
+    });
+  }
+
+  return admins;
+}
+
 async function safeClosePool(): Promise<void> {
   try {
     await closePool();
@@ -161,9 +210,7 @@ async function safeClosePool(): Promise<void> {
 }
 
 async function buildReport(sock: WASocket): Promise<{
-  socketAdminPhone: string;
-  socketAdminName: string;
-  socketAdminMb: number | string;
+  totalAdmins: number;
   groups: GroupAdminReportEntry[];
 }> {
   const { adminGroups, adminCommunity, adminCommunityAnnounce } = await processGroupsBaileys(sock);
@@ -175,35 +222,35 @@ async function buildReport(sock: WASocket): Promise<{
   const resolveLidToPhone = async (lid: string) => (await sock.signalRepository?.lidMapping?.getPNForLID(lid)) ?? null;
   const phoneLookup = buildRegistrationLookup(await getRegistrationPhoneLookupRows());
 
-  let socketAdminPhone = getFallbackPhoneFromMeBases(meBases);
-  for (const group of groups) {
-    const groupAdminPhone = await findMyAdminPhoneForGroup(group, meBases, resolveLidToPhone);
-    if (groupAdminPhone) {
-      socketAdminPhone = groupAdminPhone;
-      break;
-    }
-  }
-
-  const socketRegistration = findRegistrationByPhone(phoneLookup, socketAdminPhone);
-
   const groupEntries: GroupAdminReportEntry[] = [];
+  let totalAdmins = 0;
   for (const group of groups) {
-    const groupAdminPhone = (await findMyAdminPhoneForGroup(group, meBases, resolveLidToPhone)) ?? socketAdminPhone;
-    const registration = findRegistrationByPhone(phoneLookup, groupAdminPhone) ?? socketRegistration;
+    const ownAdminPhone = await findMyAdminPhoneForGroup(group, meBases, resolveLidToPhone);
+    const admins = await buildAdminEntriesForGroup(group, meBases, resolveLidToPhone, phoneLookup);
+
+    if (ownAdminPhone) {
+      const hasCurrentSocket = admins.some((admin) => admin.telefone === ownAdminPhone);
+      if (!hasCurrentSocket) {
+        const registration = findRegistrationByPhone(phoneLookup, ownAdminPhone);
+        admins.push({
+          telefone: ownAdminPhone,
+          nome: registration?.name?.trim() || NOT_FOUND_IN_DB,
+          mb: registration?.registration_id ?? NOT_FOUND_IN_DB,
+          papel: "admin",
+        });
+      }
+    }
 
     groupEntries.push({
-      groupId: group.id,
-      groupName: group.subject ?? group.name ?? group.id,
-      adminPhone: groupAdminPhone ?? PHONE_NOT_RESOLVED,
-      name: registration?.name?.trim() || NOT_FOUND_IN_DB,
-      mb: registration?.registration_id ?? NOT_FOUND_IN_DB,
+      id_grupo: group.id,
+      nome_grupo: group.subject ?? group.name ?? group.id,
+      administradores: admins,
     });
+    totalAdmins += admins.length;
   }
 
   return {
-    socketAdminPhone: socketAdminPhone ?? PHONE_NOT_RESOLVED,
-    socketAdminName: socketRegistration?.name?.trim() || NOT_FOUND_IN_DB,
-    socketAdminMb: socketRegistration?.registration_id ?? NOT_FOUND_IN_DB,
+    totalAdmins,
     groups: groupEntries,
   };
 }
@@ -246,16 +293,12 @@ async function main(): Promise<void> {
           outPath,
           JSON.stringify(
             {
-              timestamp: new Date().toISOString(),
-              totals: {
-                adminGroups: report.groups.length,
+              data_geracao: new Date().toISOString(),
+              totais: {
+                grupos_com_admin: report.groups.length,
+                administradores: report.totalAdmins,
               },
-              admin: {
-                phone: report.socketAdminPhone,
-                name: report.socketAdminName,
-                mb: report.socketAdminMb,
-              },
-              groups: report.groups,
+              grupos: report.groups,
             },
             null,
             2,

@@ -165,10 +165,10 @@ Observações
   - Executa: `pnpm tools:dump-admin-groups`
   - O que faz:
     - Abre sessão Baileys (QR no terminal, se necessário) e identifica todos os grupos em que a sessão atual é admin.
-    - Resolve o telefone do próprio socket/admin na sessão.
-    - Consulta o banco (`phones` e `legal_representatives`, com join em `registration`) para preencher `name` e `mb` (`registration_id`) a partir do telefone.
-    - Gera um arquivo `tools_results/admin_groups_<timestamp>.json` com os grupos e, em cada item, `groupName`, `adminPhone`, `name` e `mb`.
-    - Quando o telefone não existir no banco, preenche `name` e `mb` com `Não encontrado no banco`.
+    - Resolve todos os participantes com papel `admin` ou `superadmin` em cada grupo, incluindo o próprio socket.
+    - Consulta o banco (`phones` e `legal_representatives`, com join em `registration`) para preencher `nome` e `mb` (`registration_id`) a partir do telefone de cada admin.
+    - Gera um arquivo `tools_results/admin_groups_<timestamp>.json` com os campos em português e, em cada grupo, uma lista `administradores` com `telefone`, `nome`, `mb` e `papel`.
+    - Quando o telefone não existir no banco, preenche `nome` e `mb` com `Não encontrado no banco`.
   - Requisitos:
     - Uma sessão válida no diretório local `auth/` (QR no terminal, se necessário).
     - `.env` com Postgres configurado para consulta das tabelas `phones`, `legal_representatives` e `registration`.
