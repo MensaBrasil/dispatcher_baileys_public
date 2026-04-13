@@ -5,11 +5,12 @@ import {
   recordUserExitFromGroup,
   recordUserEntryToGroup,
   getWhatsappQueue,
-  getMemberPhoneNumbers,
+  getManagedGroupPhoneNumbers,
   registerWhatsappAddFulfilled,
 } from "../db/pgsql.js";
 import { delaySecs } from "../utils/delay.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
+import { checkGroupType } from "../utils/checkGroupType.js";
 import {
   extractPhoneFromParticipant,
   type MinimalParticipant as JidParticipant,
@@ -68,6 +69,7 @@ export async function scanGroups(
       logger.debug({ count: groupMembers.length }, "Current members count");
 
       const wppQueue = await getWhatsappQueue(groupId);
+      const groupType = await checkGroupType(groupName);
       const normalizedGroupMembers = new Set(
         groupMembers
           .map((m) => {
@@ -77,19 +79,22 @@ export async function scanGroups(
           })
           .filter((value): value is string => Boolean(value)),
       );
-      for (const request of wppQueue) {
-        const requestPhones = await getMemberPhoneNumbers(request.registration_id);
-        for (const phone of requestPhones) {
-          const digits = String(phone || "").replace(/\D/g, "");
-          if (!digits) continue;
-          const lookupKey = digits.startsWith("55") ? digits.slice(-8) : digits;
+      if (groupType) {
+        for (const request of wppQueue) {
+          const requestPhones = await getManagedGroupPhoneNumbers(request.registration_id, groupType);
+          for (const phone of requestPhones) {
+            const digits = String(phone || "").replace(/\D/g, "");
+            if (!digits) continue;
+            const lookupKey = digits.startsWith("55") ? digits.slice(-8) : digits;
 
-          if (normalizedGroupMembers.has(lookupKey)) {
+            if (!normalizedGroupMembers.has(lookupKey)) continue;
+
             await registerWhatsappAddFulfilled(request.request_id);
             logger.info(
-              { request_id: request.request_id, phone, group: groupName },
+              { request_id: request.request_id, phone, group: groupName, groupType },
               `Request ${request.request_id} for phone ${phone} is fulfilled in group ${groupName}.`,
             );
+            break;
           }
         }
       }

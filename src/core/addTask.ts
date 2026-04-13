@@ -118,6 +118,8 @@ export async function addMembersToGroups(
               isActive: flags.is_active,
               isAdult: flags.is_adult,
               isMinor: flags.is_minor,
+              hasMemberPhone: flags.has_member_phone,
+              hasLegalRepPhone: flags.has_legal_rep_phone,
             },
             groupType,
           )

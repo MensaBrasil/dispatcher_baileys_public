@@ -6,6 +6,8 @@ export type RegistrationEligibility = {
   isActive: boolean;
   isAdult: boolean;
   isMinor: boolean;
+  hasMemberPhone: boolean;
+  hasLegalRepPhone: boolean;
 };
 
 export type GroupEligibilityResult = {
@@ -23,11 +25,11 @@ export function isEligibleRegistrationForGroup(
   if (!registration.isActive) return false;
 
   if (groupType === "MB") {
-    return registration.isAdult;
+    return registration.isAdult && registration.hasMemberPhone;
   }
 
   if (groupType === "RJB") {
-    return registration.isMinor;
+    return registration.isMinor && registration.hasLegalRepPhone;
   }
 
   return false;

@@ -1,7 +1,7 @@
 import { config as configDotenv } from "dotenv";
 import { Pool } from "pg";
 import logger from "../utils/logger.js";
-import type { DBGroupRequest, WhatsAppWorker } from "../types/DBTypes.js";
+import type { DBGroupRequest, GroupType, WhatsAppWorker } from "../types/DBTypes.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import type { ActiveWhatsappPolicy } from "../types/PolicyTypes.js";
 
@@ -322,6 +322,8 @@ export type RegistrationFlags = {
   is_active: boolean;
   is_adult: boolean;
   is_minor: boolean;
+  has_member_phone: boolean;
+  has_legal_rep_phone: boolean;
 };
 
 export async function getRegistrationFlags(registrationIds: number[]): Promise<Map<number, RegistrationFlags>> {
@@ -332,7 +334,22 @@ export async function getRegistrationFlags(registrationIds: number[]): Promise<M
       r.registration_id,
       CASE WHEN med.max_expiration_date >= CURRENT_DATE THEN TRUE ELSE FALSE END AS is_active,
       CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
-      CASE WHEN DATE_PART('year', AGE(r.birth_date)) <= 17 THEN TRUE ELSE FALSE END AS is_minor
+      CASE WHEN DATE_PART('year', AGE(r.birth_date)) <= 17 THEN TRUE ELSE FALSE END AS is_minor,
+      EXISTS (
+        SELECT 1
+        FROM phones p
+        WHERE p.registration_id = r.registration_id
+          AND NULLIF(BTRIM(p.phone_number), '') IS NOT NULL
+      ) AS has_member_phone,
+      EXISTS (
+        SELECT 1
+        FROM legal_representatives lr
+        WHERE lr.registration_id = r.registration_id
+          AND (
+            NULLIF(BTRIM(lr.phone), '') IS NOT NULL
+            OR NULLIF(BTRIM(lr.alternative_phone), '') IS NOT NULL
+          )
+      ) AS has_legal_rep_phone
     FROM registration r
     LEFT JOIN (
       SELECT registration_id, MAX(expiration_date) AS max_expiration_date
@@ -485,6 +502,24 @@ export async function getMemberPhoneNumbers(registration_id: number): Promise<st
     UNION ALL
     SELECT alternative_phone AS phone FROM legal_representatives WHERE registration_id = $1 AND alternative_phone IS NOT NULL
   `;
+  const { rows } = await p.query<{ phone: string }>(query, [registration_id]);
+  return rows.map((r) => r.phone);
+}
+
+export async function getManagedGroupPhoneNumbers(registration_id: number, groupType: GroupType): Promise<string[]> {
+  const p = getPool();
+  const query =
+    groupType === "MB"
+      ? `SELECT phone_number AS phone FROM phones WHERE registration_id = $1`
+      : `
+        SELECT phone AS phone FROM legal_representatives WHERE registration_id = $1
+        UNION ALL
+        SELECT alternative_phone AS phone
+        FROM legal_representatives
+        WHERE registration_id = $1
+          AND alternative_phone IS NOT NULL
+      `;
+
   const { rows } = await p.query<{ phone: string }>(query, [registration_id]);
   return rows.map((r) => r.phone);
 }
