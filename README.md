@@ -54,6 +54,7 @@ Regras/filtragem de requisições
   - `no_of_attempts < 3`
   - `fulfilled = false`
   - `last_attempt < now() - 1 day` ou `last_attempt is null`
+- Esse filtro é usado apenas para decidir o que volta para a `addQueue`. O `scan` usa uma consulta separada para ler todos os requests ainda não fulfilled do grupo, sem backoff de tentativa.
 - `whatsapp_suspended_numbers`: qualquer `registration_id` suspenso é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
 - `IGNORED_ADD_REGISTRATION_IDS`: qualquer `registration_id` listado nessa env é ignorado e não é enfileirado para adição.
 - Só grupos `MB` e `RJB` entram no fluxo gerenciado.
@@ -133,7 +134,7 @@ O que faz
   - Marca entradas: para números novos, tenta conciliar com `phoneNumbersFromDB`:
     - Se encontrar, registra com `recordUserEntryToGroup` incluindo `registration_id` e `status` (Active/Inactive).
     - Se não encontrar, loga aviso informativo (sem inserir no DB).
-  - Concilia requisições de adição: lê `getWhatsappQueue(groupId)` e, usando os 8 últimos dígitos apenas dos telefones válidos para o tipo do grupo, confere se a entrada já se concretizou; se sim, marca `registerWhatsappAddFulfilled(request_id)`.
+  - Concilia requisições de adição: lê todos os requests ainda `fulfilled = false` do grupo, sem depender de `last_attempt` ou `no_of_attempts`, e usando os 8 últimos dígitos apenas dos telefones válidos para o tipo do grupo, confere se a entrada já se concretizou; se sim, marca `registerWhatsappAddFulfilled(request_id)`.
     - `MB`: somente telefones de `phones`.
     - `RJB`: somente telefones de `legal_representatives`.
 

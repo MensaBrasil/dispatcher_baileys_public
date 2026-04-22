@@ -181,6 +181,25 @@ export async function getWhatsappQueue(group_id: string): Promise<DBGroupRequest
   return rows;
 }
 
+export async function getUnfulfilledGroupRequestsForScan(group_id: string): Promise<DBGroupRequest[]> {
+  const p = getPool();
+  const query = `
+    SELECT
+      group_requests.id AS request_id,
+      group_requests.registration_id,
+      group_requests.group_id,
+      group_requests.no_of_attempts,
+      group_requests.last_attempt
+    FROM
+      group_requests
+    WHERE
+      group_id = $1
+      AND fulfilled = FALSE
+  `;
+  const { rows } = await p.query<DBGroupRequest>(query, [group_id]);
+  return rows;
+}
+
 export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[]> {
   const p = getPool();
   const currentDate = new Date().toISOString().split("T")[0];

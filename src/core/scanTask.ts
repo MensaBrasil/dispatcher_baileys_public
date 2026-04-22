@@ -4,7 +4,7 @@ import {
   getPreviousGroupMembers,
   recordUserExitFromGroup,
   recordUserEntryToGroup,
-  getWhatsappQueue,
+  getUnfulfilledGroupRequestsForScan,
   getManagedGroupPhoneNumbers,
   registerWhatsappAddFulfilled,
 } from "../db/pgsql.js";
@@ -68,7 +68,7 @@ export async function scanGroups(
       const groupMembers = resolvedMembers.filter((x): x is string => Boolean(x));
       logger.debug({ count: groupMembers.length }, "Current members count");
 
-      const wppQueue = await getWhatsappQueue(groupId);
+      const wppQueue = await getUnfulfilledGroupRequestsForScan(groupId);
       const groupType = await checkGroupType(groupName);
       const normalizedGroupMembers = new Set(
         groupMembers
