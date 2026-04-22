@@ -171,6 +171,7 @@ async function main() {
         const addTaskGroups = managedAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
         addSummary = await addMembersToGroups(addTaskGroups, {
           suspendedRegistrationIds: new Set(activePolicy.suspendedRegistrationIds),
+          suspendedPhones: activePolicy.suspendedPhones,
         });
       }
 

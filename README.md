@@ -51,15 +51,18 @@ Entrada esperada
 Regras/filtragem de requisições
 
 - `getWhatsappQueue(group_id)` retorna apenas requisições:
-  - `no_of_attempts < 3`
   - `fulfilled = false`
-  - `last_attempt < now() - 1 day` ou `last_attempt is null`
+  - `no_of_attempts < 3` ou `no_of_attempts is null`
+  - apenas a requisição mais recente por par `registration_id + group_id`
+  - `last_attempt < now() - 1 day` ou `last_attempt is null`, aplicado sobre essa requisição mais recente
 - Esse filtro é usado apenas para decidir o que volta para a `addQueue`. O `scan` usa uma consulta separada para ler todos os requests ainda não fulfilled do grupo, sem backoff de tentativa.
 - `whatsapp_suspended_numbers`: qualquer `registration_id` suspenso é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
+- Telefones em `whatsapp_suspended_numbers` tambem bloqueiam a entrada na `addQueue`, mesmo que o cadastro em si nao esteja suspenso.
 - `IGNORED_ADD_REGISTRATION_IDS`: qualquer `registration_id` listado nessa env é ignorado e não é enfileirado para adição.
 - Só grupos `MB` e `RJB` entram no fluxo gerenciado.
-- `MB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de adulto (`>= 18`) e houver pelo menos um telefone no cadastro do membro (`phones`).
-- `RJB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de menor (`<= 17`) e houver pelo menos um telefone de responsável legal em `legal_representatives`.
+- Cadastro ativo para add considera pagamento vigente e tambem exclui `transferred`, `deceased`, `expelled` e `suspended_until` ainda vigente.
+- `MB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de adulto (`>= 18`) e houver pelo menos um telefone do membro (`phones`) que esteja autorizado para algum worker e nao esteja suspenso.
+- `RJB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de menor (`<= 17`) e houver pelo menos um telefone de responsável legal (`legal_representatives`) que esteja autorizado para algum worker e nao esteja suspenso.
 
 Erros e logs
 

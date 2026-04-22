@@ -1,10 +1,23 @@
 import logger from "../utils/logger.js";
-import { getWhatsappQueue, getRegistrationFlags, closePool } from "../db/pgsql.js";
+import {
+  getAllWhatsAppAuthorizations,
+  getAllWhatsAppWorkers,
+  getManagedGroupPhoneNumbers,
+  getWhatsappQueue,
+  getRegistrationFlags,
+  closePool,
+} from "../db/pgsql.js";
 import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { checkGroupType } from "../utils/checkGroupType.js";
 import type { GroupType } from "../types/DBTypes.js";
 import type { AddPolicy } from "../types/PolicyTypes.js";
 import { isEligibleRegistrationForGroup } from "../utils/whatsappEligibility.js";
+import {
+  buildAuthorizationLookup,
+  buildSuspendedPhoneLookup,
+  isPhoneInSuspendedLookup,
+  resolveAuthorizedWorkersForPhone,
+} from "../utils/phoneMatch.js";
 
 type MinimalGroup = { id: string; subject?: string; name?: string };
 
@@ -17,7 +30,10 @@ export type AddSummary = {
   ignoredRegistrationsCount: number;
 };
 
-const EMPTY_ADD_POLICY: AddPolicy = { suspendedRegistrationIds: new Set<number>() };
+const EMPTY_ADD_POLICY: AddPolicy = {
+  suspendedRegistrationIds: new Set<number>(),
+  suspendedPhones: [],
+};
 
 function parseEnvCsvNumberSet(name: string): Set<number> {
   const raw = process.env[name];
@@ -77,6 +93,10 @@ export async function addMembersToGroups(
   }
 
   const registrationFlags = await getRegistrationFlags([...registrationIds]);
+  const [workers, authorizations] = await Promise.all([getAllWhatsAppWorkers(), getAllWhatsAppAuthorizations()]);
+  const authorizationLookup = buildAuthorizationLookup(workers, authorizations);
+  const suspendedPhoneLookup = buildSuspendedPhoneLookup(policy.suspendedPhones);
+  const managedPhonesByRegistrationAndGroupType = new Map<string, string[]>();
 
   for (const entry of queuesByGroup) {
     const { groupId, groupName, groupType, requests } = entry;
@@ -127,6 +147,28 @@ export async function addMembersToGroups(
           logger.info(
             { registration_id: request.registration_id, groupId, groupName, groupType },
             "Registration is not eligible for managed group type; skipping add",
+          );
+          continue;
+        }
+
+        const managedPhoneCacheKey = `${request.registration_id}:${groupType}`;
+        let managedPhones = managedPhonesByRegistrationAndGroupType.get(managedPhoneCacheKey);
+        if (!managedPhones) {
+          managedPhones = await getManagedGroupPhoneNumbers(request.registration_id, groupType);
+          managedPhonesByRegistrationAndGroupType.set(managedPhoneCacheKey, managedPhones);
+        }
+
+        const hasEligibleManagedPhone = managedPhones.some((phone) => {
+          if (isPhoneInSuspendedLookup(phone, suspendedPhoneLookup)) {
+            return false;
+          }
+
+          return resolveAuthorizedWorkersForPhone(phone, authorizationLookup).length > 0;
+        });
+        if (!hasEligibleManagedPhone) {
+          logger.info(
+            { registration_id: request.registration_id, groupId, groupName, groupType },
+            "Registration has no authorized, non-suspended managed phone for this group type; skipping add",
           );
           continue;
         }

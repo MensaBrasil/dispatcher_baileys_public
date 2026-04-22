@@ -6,6 +6,7 @@ export type ActiveWhatsappPolicy = {
 
 export type AddPolicy = {
   suspendedRegistrationIds: Set<number>;
+  suspendedPhones: string[];
 };
 
 export type RemovalPolicy = {

@@ -163,19 +163,45 @@ export async function runPostgresPreflight(): Promise<void> {
 export async function getWhatsappQueue(group_id: string): Promise<DBGroupRequest[]> {
   const p = getPool();
   const query = `
+    WITH latest_requests AS (
+      SELECT
+        group_requests.id AS request_id,
+        group_requests.registration_id,
+        group_requests.group_id,
+        COALESCE(group_requests.no_of_attempts, 0) AS no_of_attempts,
+        group_requests.last_attempt,
+        group_requests.updated_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY group_requests.registration_id, group_requests.group_id
+          ORDER BY
+            group_requests.last_attempt DESC NULLS LAST,
+            group_requests.updated_at DESC NULLS LAST,
+            group_requests.id DESC
+        ) AS request_rank
+      FROM
+        group_requests
+      WHERE
+        group_requests.group_id = $1
+        AND group_requests.fulfilled = FALSE
+        AND (
+          group_requests.no_of_attempts < 3
+          OR group_requests.no_of_attempts IS NULL
+        )
+    )
     SELECT
-      group_requests.id AS request_id,
-      group_requests.registration_id,
-      group_requests.group_id,
-      group_requests.no_of_attempts,
-      group_requests.last_attempt
+      request_id,
+      registration_id,
+      group_id,
+      no_of_attempts,
+      last_attempt
     FROM
-      group_requests
+      latest_requests
     WHERE
-      no_of_attempts < 3
-      AND group_id = $1
-      AND fulfilled = FALSE
+      request_rank = 1
       AND (last_attempt < NOW() - INTERVAL '1 DAY' OR last_attempt IS NULL)
+    ORDER BY
+      registration_id ASC,
+      request_id ASC
   `;
   const { rows } = await p.query<DBGroupRequest>(query, [group_id]);
   return rows;
@@ -188,7 +214,7 @@ export async function getUnfulfilledGroupRequestsForScan(group_id: string): Prom
       group_requests.id AS request_id,
       group_requests.registration_id,
       group_requests.group_id,
-      group_requests.no_of_attempts,
+      COALESCE(group_requests.no_of_attempts, 0) AS no_of_attempts,
       group_requests.last_attempt
     FROM
       group_requests
@@ -351,7 +377,18 @@ export async function getRegistrationFlags(registrationIds: number[]): Promise<M
   const query = `
     SELECT
       r.registration_id,
-      CASE WHEN med.max_expiration_date >= CURRENT_DATE THEN TRUE ELSE FALSE END AS is_active,
+      CASE
+        WHEN med.max_expiration_date >= CURRENT_DATE
+          AND COALESCE(r.transferred, FALSE) = FALSE
+          AND COALESCE(r.deceased, FALSE) = FALSE
+          AND COALESCE(r.expelled, FALSE) = FALSE
+          AND NOT (
+            r.suspended_until IS NOT NULL
+            AND r.suspended_until >= CURRENT_DATE
+          )
+        THEN TRUE
+        ELSE FALSE
+      END AS is_active,
       CASE WHEN DATE_PART('year', AGE(r.birth_date)) >= 18 THEN TRUE ELSE FALSE END AS is_adult,
       CASE WHEN DATE_PART('year', AGE(r.birth_date)) <= 17 THEN TRUE ELSE FALSE END AS is_minor,
       EXISTS (
@@ -587,6 +624,17 @@ export default { getWhatsappQueue, closePool };
 export async function getAllWhatsAppWorkers(): Promise<WhatsAppWorker[]> {
   const query = "SELECT id, worker_phone FROM whatsapp_workers;";
   const { rows } = await getPool().query<WhatsAppWorker>(query);
+  return rows;
+}
+
+export async function getAllWhatsAppAuthorizations(): Promise<
+  Array<{ phone_number: string | null; worker_id: number | null }>
+> {
+  const query = `
+    SELECT phone_number, worker_id
+    FROM whatsapp_authorization
+  `;
+  const { rows } = await getPool().query<{ phone_number: string | null; worker_id: number | null }>(query);
   return rows;
 }
 
