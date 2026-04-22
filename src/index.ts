@@ -46,7 +46,7 @@ async function main() {
   const tasksSpecified = Boolean(opts.add || opts.remove || opts.scan);
   const runAdd = tasksSpecified ? Boolean(opts.add) : true;
   const runRemove = tasksSpecified ? Boolean(opts.remove || communityMode) : true;
-  const runScan = tasksSpecified ? Boolean(opts.scan) : true;
+  const runScan = tasksSpecified ? Boolean(opts.scan || opts.add || opts.remove || communityMode) : true;
   const pairingCodeMode = Boolean(opts.pairing);
 
   logger.info(
@@ -165,24 +165,23 @@ async function main() {
       const isInvitedPhone = buildProtectedPhoneMatcherFromList(activePolicy.invitedPhones);
       const isSuspendedPhone = buildSuspendedPhoneMatcherFromList(activePolicy.suspendedPhones);
 
-      // 1) Add task (id + name/subject)
-      let addSummary: AddSummary | undefined;
-      if (runAdd) {
-        const addTaskGroups = managedAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
-        addSummary = await addMembersToGroups(addTaskGroups, {
-          suspendedRegistrationIds: new Set(activePolicy.suspendedRegistrationIds),
-          suspendedPhones: activePolicy.suspendedPhones,
-        });
-      }
-
-      // Optional delay between actions that may touch services
-      await delaySecs(actionDelayMin, actionDelayMax, actionDelayJitter);
-
-      // 2) Build phone map if needed for remove/scan
+      // 1) Build phone map if needed for scan/remove
       let phoneMap: ReturnType<typeof preprocessPhoneNumbers> | undefined;
       if (runRemove || runScan) {
         const phoneRows = await getPhoneNumbersWithStatus();
         phoneMap = preprocessPhoneNumbers(phoneRows);
+      }
+
+      // 2) Scan task always runs first so add/remove use the freshest group state.
+      if (runScan && phoneMap) {
+        await scanGroups(managedAdminGroups, phoneMap, {
+          resolveLidToPhone: lidResolver,
+          policy: { isInvitedPhone },
+        });
+      }
+
+      if (runScan && (runRemove || runAdd)) {
+        await delaySecs(actionDelayMin, actionDelayMax, actionDelayJitter);
       }
 
       // 3) Remove task
@@ -194,15 +193,17 @@ async function main() {
         });
       }
 
-      if (runRemove && (runScan || false)) {
+      if (runRemove && runAdd) {
         await delaySecs(actionDelayMin, actionDelayMax, actionDelayJitter);
       }
 
-      // 4) Scan task
-      if (runScan && phoneMap) {
-        await scanGroups(managedAdminGroups, phoneMap, {
-          resolveLidToPhone: lidResolver,
-          policy: { isInvitedPhone },
+      // 4) Add task (id + name/subject)
+      let addSummary: AddSummary | undefined;
+      if (runAdd) {
+        const addTaskGroups = managedAdminGroups.map((g) => ({ id: g.id, subject: g.subject, name: g.name }));
+        addSummary = await addMembersToGroups(addTaskGroups, {
+          suspendedRegistrationIds: new Set(activePolicy.suspendedRegistrationIds),
+          suspendedPhones: activePolicy.suspendedPhones,
         });
       }
 

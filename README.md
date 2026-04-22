@@ -3,13 +3,13 @@ Dispatcher — Operação e Documentação (add/remove/scan)
 Visão geral
 
 - Objetivo: Orquestrar ciclos de manutenção de grupos WhatsApp (via Baileys + DB + Redis), executando as tarefas de adicionar, remover e escanear uma única vez por ciclo.
-- Ciclo: Executa exatamente uma vez por intervalo configurável (em segundos) via `CYCLE_DELAY_SECONDS`. Entre ações que usam o socket e entre tarefas, há atrasos aleatórios para reduzir risco de ban.
+- Ciclo: Executa exatamente uma vez por intervalo configurável (em segundos) via `CYCLE_DELAY_SECONDS`. Quando `add` ou `remove` estão habilitados, o `scan` roda primeiro para atualizar o estado do grupo antes das demais decisões. Entre ações que usam o socket e entre tarefas, há atrasos aleatórios para reduzir risco de ban.
 
 Execução
 
 - CLI: `pnpm start [--add] [--remove] [--scan]`
-  - Sem flags: executa add, remove e scan.
-  - Com flags: executa apenas as tarefas selecionadas.
+  - Sem flags: executa scan, remove e add.
+  - Com flags: executa as tarefas selecionadas, mas `add` e `remove` sempre forçam um `scan` preparatório antes do restante do ciclo.
 - Loop principal: inicia após `connection=open` no Baileys e repete a cada `CYCLE_DELAY_SECONDS`.
 - Delays: controlados por `ACTION_DELAY_MIN`/`ACTION_DELAY_MAX`/`ACTION_DELAY_JITTER` (segundos) e aplicados entre as tarefas.
   `SCAN_DELAY` controla atraso por grupo durante o scan.

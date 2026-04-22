@@ -3,13 +3,13 @@
 set -euo pipefail
 
 echo "Selecione o modo de execução:"
-echo " 1) Rodar apenas adição (--add)"
-echo " 2) Rodar apenas remoção (--remove)"
-echo " 3) Rodar adição e scan (--add --scan)"
-echo " 4) Rodar remoção e scan (--remove --scan)"
+echo " 1) Rodar scan + adição (--add)"
+echo " 2) Rodar scan + remoção (--remove)"
+echo " 3) Rodar scan + adição (--add --scan)"
+echo " 4) Rodar scan + remoção (--remove --scan)"
 echo " 5) Rodar apenas scan (--scan)"
-echo " 6) Rodar community (--add --community --scan)"
-echo " 7) Rodar adição, remoção e scan (--add --remove --scan)"
+echo " 6) Rodar community com scan (--add --community --scan)"
+echo " 7) Rodar scan, remoção e adição (--add --remove --scan)"
 printf "Opção: "
 read -r choice
 
