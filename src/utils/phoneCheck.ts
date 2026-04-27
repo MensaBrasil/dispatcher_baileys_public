@@ -1,4 +1,4 @@
-import type { PhoneNumberStatusRow, PhoneCheckResult } from "../types/PhoneTypes.js";
+import type { PhoneCheckResult, PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 
 export function preprocessPhoneNumbers(
   phoneNumbersFromDB: PhoneNumberStatusRow[],
@@ -11,24 +11,26 @@ export function preprocessPhoneNumbers(
     if (phoneNumber.includes("+")) {
       phoneNumber = phoneNumber.replace(/\D/g, "");
     } else {
-      phoneNumber = "55" + phoneNumber.replace(/\D/g, "").replace(/^0+/, "");
+      phoneNumber = `55${phoneNumber.replace(/\D/g, "").replace(/^0+/, "")}`;
     }
 
     if (phoneNumber.startsWith("55")) {
-      const numberWithoutNinthDigit = phoneNumber.slice(0, 4) + phoneNumber.slice(5);
-      const numberWithNinthDigit = phoneNumber.slice(0, 4) + "9" + phoneNumber.slice(4);
+      const numberWithoutNinthDigit = `${phoneNumber.slice(0, 4)}${phoneNumber.slice(5)}`;
+      const numberWithNinthDigit = `${phoneNumber.slice(0, 4)}9${phoneNumber.slice(4)}`;
 
       const addToMap = (num: string) => {
-        if (!phoneNumberMap.has(num)) phoneNumberMap.set(num, []);
-        phoneNumberMap.get(num)!.push(entry);
+        const entries = phoneNumberMap.get(num) ?? [];
+        entries.push(entry);
+        phoneNumberMap.set(num, entries);
       };
 
       addToMap(phoneNumber);
       addToMap(numberWithoutNinthDigit);
       addToMap(numberWithNinthDigit);
     } else {
-      if (!phoneNumberMap.has(phoneNumber)) phoneNumberMap.set(phoneNumber, []);
-      phoneNumberMap.get(phoneNumber)!.push(entry);
+      const entries = phoneNumberMap.get(phoneNumber) ?? [];
+      entries.push(entry);
+      phoneNumberMap.set(phoneNumber, entries);
     }
   }
 
@@ -64,8 +66,17 @@ export function checkPhoneNumber(
     if (entry.phone_role === "legal_rep" && entry.member_age_years <= 17) hasLegalRepForMinor = true;
     if (entry.phone_role === "legal_rep" && entry.member_age_years >= 18) hasLegalRepForAdult = true;
 
-    if (entry.status === "Active" && entry.is_managed_mb_eligible) hasActiveMB = true;
-    if (entry.status === "Active" && entry.is_managed_rjb_eligible) hasActiveRJB = true;
+    if (entry.status === "Active" && entry.is_managed_mb_eligible && entry.managed_phone_count === 1) {
+      hasActiveMB = true;
+    }
+    if (
+      entry.status === "Active" &&
+      entry.is_managed_rjb_eligible &&
+      entry.managed_phone_count >= 1 &&
+      entry.managed_phone_count <= 2
+    ) {
+      hasActiveRJB = true;
+    }
     if (entry.status === "Inactive" && entry.phone_role === "member" && entry.member_age_years >= 18)
       hasInactiveMB = true;
     if (entry.status === "Inactive" && entry.phone_role === "legal_rep" && entry.member_age_years <= 17) {
@@ -73,7 +84,10 @@ export function checkPhoneNumber(
     }
   }
 
-  const primary = matchedEntries[0]!;
+  const primary = matchedEntries[0];
+  if (!primary) {
+    return { found: false };
+  }
   const status: "Active" | "Inactive" = hasActiveMB || hasActiveRJB ? "Active" : "Inactive";
 
   return {

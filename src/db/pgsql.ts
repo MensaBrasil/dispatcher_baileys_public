@@ -1,9 +1,9 @@
 import { config as configDotenv } from "dotenv";
 import { Pool } from "pg";
-import logger from "../utils/logger.js";
 import type { DBGroupRequest, GroupType, WhatsAppWorker } from "../types/DBTypes.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import type { ActiveWhatsappPolicy } from "../types/PolicyTypes.js";
+import logger from "../utils/logger.js";
 
 configDotenv({ path: ".env" });
 
@@ -234,70 +234,76 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       SELECT registration_id, MAX(expiration_date) AS max_expiration_date
       FROM membership_payments
       GROUP BY registration_id
+    ), RegistrationStatus AS (
+      SELECT
+        r.registration_id,
+        DATE_PART('year', AGE(r.birth_date))::int AS member_age_years,
+        CASE
+          WHEN med.max_expiration_date >= $1::date
+            AND COALESCE(r.transferred, FALSE) = FALSE
+            AND COALESCE(r.deceased, FALSE) = FALSE
+            AND COALESCE(r.expelled, FALSE) = FALSE
+            AND NOT (
+              r.suspended_until IS NOT NULL
+              AND r.suspended_until >= $1::date
+            )
+          THEN TRUE
+          ELSE FALSE
+        END AS is_active
+      FROM registration r
+      LEFT JOIN MaxExpirationDates med ON r.registration_id = med.registration_id
     ), PhoneNumbers AS (
       SELECT
         p.phone_number AS phone_number,
         p.registration_id AS registration_id,
         CASE
-          WHEN med.max_expiration_date >= $1::date THEN 'Active'
+          WHEN rs.is_active THEN 'Active'
           ELSE 'Inactive'
         END AS status,
         'member'::text AS phone_role,
-        DATE_PART('year', AGE(r.birth_date))::int AS member_age_years,
+        rs.member_age_years,
+        (
+          SELECT COUNT(*)::int
+          FROM phones mp
+          WHERE mp.registration_id = p.registration_id
+            AND NULLIF(BTRIM(mp.phone_number), '') IS NOT NULL
+        ) AS managed_phone_count,
         FALSE AS is_legal_representative,
         CASE
-          WHEN med.max_expiration_date >= $1::date
-            AND DATE_PART('year', AGE(r.birth_date)) >= 18
+          WHEN rs.is_active
+            AND rs.member_age_years >= 18
           THEN TRUE
           ELSE FALSE
         END AS is_managed_mb_eligible,
         FALSE AS is_managed_rjb_eligible
       FROM phones p
-      LEFT JOIN MaxExpirationDates med ON p.registration_id = med.registration_id
-      LEFT JOIN registration r ON p.registration_id = r.registration_id
+      LEFT JOIN RegistrationStatus rs ON p.registration_id = rs.registration_id
       UNION ALL
       SELECT
         lr.phone AS phone_number,
         lr.registration_id,
         CASE
-          WHEN med.max_expiration_date >= $1::date THEN 'Active'
+          WHEN rs.is_active THEN 'Active'
           ELSE 'Inactive'
         END AS status,
         'legal_rep'::text AS phone_role,
-        DATE_PART('year', AGE(reg.birth_date))::int AS member_age_years,
+        rs.member_age_years,
+        (
+          SELECT COUNT(*)::int
+          FROM legal_representatives mlr
+          WHERE mlr.registration_id = lr.registration_id
+            AND NULLIF(BTRIM(mlr.phone), '') IS NOT NULL
+        ) AS managed_phone_count,
         TRUE AS is_legal_representative,
         FALSE AS is_managed_mb_eligible,
         CASE
-          WHEN med.max_expiration_date >= $1::date
-            AND DATE_PART('year', AGE(reg.birth_date)) <= 17
+          WHEN rs.is_active
+            AND rs.member_age_years <= 17
           THEN TRUE
           ELSE FALSE
         END AS is_managed_rjb_eligible
       FROM legal_representatives lr
-      LEFT JOIN MaxExpirationDates med ON lr.registration_id = med.registration_id
-      LEFT JOIN registration reg ON lr.registration_id = reg.registration_id
-      UNION ALL
-      SELECT
-        lr.alternative_phone AS phone_number,
-        lr.registration_id,
-        CASE
-          WHEN med.max_expiration_date >= $1::date THEN 'Active'
-          ELSE 'Inactive'
-        END AS status,
-        'legal_rep'::text AS phone_role,
-        DATE_PART('year', AGE(reg.birth_date))::int AS member_age_years,
-        TRUE AS is_legal_representative,
-        FALSE AS is_managed_mb_eligible,
-        CASE
-          WHEN med.max_expiration_date >= $1::date
-            AND DATE_PART('year', AGE(reg.birth_date)) <= 17
-          THEN TRUE
-          ELSE FALSE
-        END AS is_managed_rjb_eligible
-      FROM legal_representatives lr
-      LEFT JOIN MaxExpirationDates med ON lr.registration_id = med.registration_id
-      LEFT JOIN registration reg ON lr.registration_id = reg.registration_id
-      WHERE lr.alternative_phone IS NOT NULL
+      LEFT JOIN RegistrationStatus rs ON lr.registration_id = rs.registration_id
     )
     SELECT
       phone_number,
@@ -305,12 +311,13 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       status,
       phone_role,
       member_age_years,
+      managed_phone_count,
       BOOL_OR(is_legal_representative) AS is_legal_representative,
       BOOL_OR(is_managed_mb_eligible) AS is_managed_mb_eligible,
       BOOL_OR(is_managed_rjb_eligible) AS is_managed_rjb_eligible
     FROM PhoneNumbers
     WHERE phone_number IS NOT NULL
-    GROUP BY phone_number, registration_id, status, phone_role, member_age_years
+    GROUP BY phone_number, registration_id, status, phone_role, member_age_years, managed_phone_count
     ORDER BY status, phone_number;
   `;
   const { rows } = await p.query<PhoneNumberStatusRow>(query, [currentDate]);
@@ -369,6 +376,8 @@ export type RegistrationFlags = {
   is_minor: boolean;
   has_member_phone: boolean;
   has_legal_rep_phone: boolean;
+  member_phone_count: number;
+  legal_rep_phone_count: number;
 };
 
 export async function getRegistrationFlags(registrationIds: number[]): Promise<Map<number, RegistrationFlags>> {
@@ -397,15 +406,24 @@ export async function getRegistrationFlags(registrationIds: number[]): Promise<M
         WHERE p.registration_id = r.registration_id
           AND NULLIF(BTRIM(p.phone_number), '') IS NOT NULL
       ) AS has_member_phone,
+      (
+        SELECT COUNT(*)::int
+        FROM phones p
+        WHERE p.registration_id = r.registration_id
+          AND NULLIF(BTRIM(p.phone_number), '') IS NOT NULL
+      ) AS member_phone_count,
       EXISTS (
         SELECT 1
         FROM legal_representatives lr
         WHERE lr.registration_id = r.registration_id
-          AND (
-            NULLIF(BTRIM(lr.phone), '') IS NOT NULL
-            OR NULLIF(BTRIM(lr.alternative_phone), '') IS NOT NULL
-          )
-      ) AS has_legal_rep_phone
+          AND NULLIF(BTRIM(lr.phone), '') IS NOT NULL
+      ) AS has_legal_rep_phone,
+      (
+        SELECT COUNT(*)::int
+        FROM legal_representatives lr
+        WHERE lr.registration_id = r.registration_id
+          AND NULLIF(BTRIM(lr.phone), '') IS NOT NULL
+      ) AS legal_rep_phone_count
     FROM registration r
     LEFT JOIN (
       SELECT registration_id, MAX(expiration_date) AS max_expiration_date
@@ -567,14 +585,7 @@ export async function getManagedGroupPhoneNumbers(registration_id: number, group
   const query =
     groupType === "MB"
       ? `SELECT phone_number AS phone FROM phones WHERE registration_id = $1`
-      : `
-        SELECT phone AS phone FROM legal_representatives WHERE registration_id = $1
-        UNION ALL
-        SELECT alternative_phone AS phone
-        FROM legal_representatives
-        WHERE registration_id = $1
-          AND alternative_phone IS NOT NULL
-      `;
+      : `SELECT phone AS phone FROM legal_representatives WHERE registration_id = $1`;
 
   const { rows } = await p.query<{ phone: string }>(query, [registration_id]);
   return rows.map((r) => r.phone);
@@ -601,10 +612,10 @@ export async function saveGroupsToList(groups: Array<{ group_id: string; group_n
     if (groups.length > 0) {
       const values: unknown[] = [];
       const placeholders: string[] = [];
-      for (let i = 0; i < groups.length; i++) {
+      for (const [i, group] of groups.entries()) {
         const base = i * 2;
         placeholders.push(`($${base + 1}, $${base + 2})`);
-        values.push(groups[i]!.group_name, groups[i]!.group_id);
+        values.push(group.group_name, group.group_id);
       }
       const insertSql = `INSERT INTO group_list (group_name, group_id) VALUES ${placeholders.join(",")}`;
       await p.query(insertSql, values);

@@ -1,7 +1,7 @@
 import { config as configDotenv } from "dotenv";
 import { createClient, type RedisClientType } from "redis";
-import logger from "../utils/logger.js";
 import type { JsonValue, QueueName, RedisModule } from "../types/RedisTypes.js";
+import logger from "../utils/logger.js";
 
 configDotenv({ path: ".env" });
 
@@ -167,4 +167,4 @@ const redisModule: RedisModule = {
 };
 
 export default redisModule;
-export { connect, disconnect, testRedisConnection, sendToQueue, getAllFromQueue, getQueueLength, clearQueue };
+export { clearQueue, connect, disconnect, getAllFromQueue, getQueueLength, sendToQueue, testRedisConnection };

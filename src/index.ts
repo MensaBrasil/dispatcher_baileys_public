@@ -1,24 +1,24 @@
-import { config as configDotenv } from "dotenv";
-import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers, useMultiFileAuthState } from "baileys";
+import { writeFile } from "node:fs/promises";
 import type { WASocket } from "baileys";
+import { Browsers, DisconnectReason, fetchLatestBaileysVersion, makeWASocket, useMultiFileAuthState } from "baileys";
+import { Command } from "commander";
+import { config as configDotenv } from "dotenv";
 import qrcode from "qrcode-terminal";
-import logger, { sanitizeLevel } from "./utils/logger.js";
-import type { BoomError } from "./types/ErrorTypes.js";
-import { addMembersToGroups, type AddSummary } from "./core/addTask.js";
-import { removeMembersFromGroups, type RemoveSummary } from "./core/removeTask.js";
+import { getAuthStateDir } from "./baileys/auth-state-dir.js";
+import { type AddSummary, addMembersToGroups } from "./core/addTask.js";
+import { type RemoveSummary, removeMembersFromGroups } from "./core/removeTask.js";
 import { scanGroups } from "./core/scanTask.js";
 import { getActiveWhatsappPolicy, getPhoneNumbersWithStatus, saveGroupsToList, upsertLidMapping } from "./db/pgsql.js";
-import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
+import { getQueueLength } from "./db/redis.js";
+import { runStartupPreflight } from "./startup/preflight.js";
+import type { BoomError } from "./types/ErrorTypes.js";
+import { checkGroupType } from "./utils/checkGroupType.js";
 import { delaySecs } from "./utils/delay.js";
-import { Command } from "commander";
 import { processGroupsBaileys } from "./utils/groups.js";
 import type { ResolveLidToPhoneFn } from "./utils/jid.js";
-import { checkGroupType } from "./utils/checkGroupType.js";
-import { getQueueLength } from "./db/redis.js";
-import { writeFile } from "fs/promises";
+import logger, { sanitizeLevel } from "./utils/logger.js";
+import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
 import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
-import { runStartupPreflight } from "./startup/preflight.js";
-import { getAuthStateDir } from "./baileys/auth-state-dir.js";
 
 configDotenv({ path: ".env" });
 
@@ -442,7 +442,7 @@ async function main() {
           process.exit(1);
         }
 
-        const backoff = Math.min(maxBackoffMs, 1000 * Math.pow(2, reconnectAttempts - 1));
+        const backoff = Math.min(maxBackoffMs, 1000 * 2 ** (reconnectAttempts - 1));
         logger.warn({ code, attempt: reconnectAttempts, backoff }, "[wa] connection closed; reinitializing socket...");
 
         setTimeout(() => {

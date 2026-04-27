@@ -1,23 +1,23 @@
 import { config as configDotenv } from "dotenv";
-import logger from "../utils/logger.js";
 import {
-  getPreviousGroupMembers,
-  recordUserExitFromGroup,
-  recordUserEntryToGroup,
-  getUnfulfilledGroupRequestsForScan,
   getManagedGroupPhoneNumbers,
+  getPreviousGroupMembers,
+  getUnfulfilledGroupRequestsForScan,
+  recordUserEntryToGroup,
+  recordUserExitFromGroup,
   registerWhatsappAddFulfilled,
 } from "../db/pgsql.js";
-import { delaySecs } from "../utils/delay.js";
-import { checkPhoneNumber } from "../utils/phoneCheck.js";
+import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
+import type { ScanPolicy } from "../types/PolicyTypes.js";
 import { checkGroupType } from "../utils/checkGroupType.js";
+import { delaySecs } from "../utils/delay.js";
 import {
   extractPhoneFromParticipant,
   type MinimalParticipant as JidParticipant,
   type ResolveLidToPhoneFn,
 } from "../utils/jid.js";
-import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
-import type { ScanPolicy } from "../types/PolicyTypes.js";
+import logger from "../utils/logger.js";
+import { checkPhoneNumber } from "../utils/phoneCheck.js";
 
 configDotenv({ path: ".env" });
 const scanDelay = Number.parseInt(process.env.SCAN_DELAY ?? "1", 10) || 0;
@@ -116,11 +116,20 @@ export async function scanGroups(
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
         if (!previousMembers.includes(member)) {
           if (checkResult.found) {
+            const registrationId = checkResult.mb;
+            const status = checkResult.status;
+            if (registrationId === undefined || status === undefined) {
+              logger.warn(
+                { phone: member, group: groupName },
+                `Number ${member} is new to the group, but DB match is incomplete.`,
+              );
+              continue;
+            }
             logger.info(
-              { phone: member, mb: checkResult.mb, group: groupName },
+              { phone: member, mb: registrationId, group: groupName },
               `Number ${member} is new to the group.`,
             );
-            await recordUserEntryToGroup(checkResult.mb!, member, groupId, checkResult.status!);
+            await recordUserEntryToGroup(registrationId, member, groupId, status);
           } else {
             logger.warn(
               { phone: member, group: groupName },
@@ -131,7 +140,6 @@ export async function scanGroups(
       }
     } catch (error) {
       logger.error({ err: error, group: group.name ?? group.subject ?? group.id }, `Error scanning group`);
-      continue; // proceed to next group
     }
   }
 }

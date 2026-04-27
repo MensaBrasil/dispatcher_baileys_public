@@ -1,23 +1,23 @@
-import logger from "../utils/logger.js";
 import {
+  closePool,
   getAllWhatsAppAuthorizations,
   getAllWhatsAppWorkers,
   getManagedGroupPhoneNumbers,
-  getWhatsappQueue,
   getRegistrationFlags,
-  closePool,
+  getWhatsappQueue,
 } from "../db/pgsql.js";
-import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
-import { checkGroupType } from "../utils/checkGroupType.js";
+import { clearQueue, disconnect as disconnectRedis, sendToQueue } from "../db/redis.js";
 import type { GroupType } from "../types/DBTypes.js";
 import type { AddPolicy } from "../types/PolicyTypes.js";
-import { isEligibleRegistrationForGroup } from "../utils/whatsappEligibility.js";
+import { checkGroupType } from "../utils/checkGroupType.js";
+import logger from "../utils/logger.js";
 import {
   buildAuthorizationLookup,
   buildSuspendedPhoneLookup,
   isPhoneInSuspendedLookup,
   resolveAuthorizedWorkersForPhone,
 } from "../utils/phoneMatch.js";
+import { isEligibleRegistrationForGroup } from "../utils/whatsappEligibility.js";
 
 type MinimalGroup = { id: string; subject?: string; name?: string };
 
@@ -140,6 +140,8 @@ export async function addMembersToGroups(
               isMinor: flags.is_minor,
               hasMemberPhone: flags.has_member_phone,
               hasLegalRepPhone: flags.has_legal_rep_phone,
+              memberPhoneCount: flags.member_phone_count,
+              legalRepPhoneCount: flags.legal_rep_phone_count,
             },
             groupType,
           )

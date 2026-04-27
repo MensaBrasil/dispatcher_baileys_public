@@ -1,22 +1,22 @@
-import { config as configDotenv } from "dotenv";
 import {
-  makeWASocket,
-  fetchLatestBaileysVersion,
-  DisconnectReason,
   Browsers,
-  type WASocket,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeWASocket,
   useMultiFileAuthState,
+  type WASocket,
 } from "baileys";
-import qrcode from "qrcode-terminal";
 import { Command } from "commander";
-import logger, { sanitizeLevel } from "../utils/logger.js";
+import { config as configDotenv } from "dotenv";
+import qrcode from "qrcode-terminal";
+import { getAuthStateDir } from "../baileys/auth-state-dir.js";
+import { getActiveWhatsappPolicy } from "../db/pgsql.js";
+import { clearQueue, disconnect as disconnectRedis, sendToQueue } from "../db/redis.js";
 import type { BoomError } from "../types/ErrorTypes.js";
 import { processGroupsBaileys } from "../utils/groups.js";
 import { extractPhoneFromParticipant } from "../utils/jid.js";
-import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
+import logger, { sanitizeLevel } from "../utils/logger.js";
 import { buildProtectedPhoneMatcherFromList } from "../utils/phoneList.js";
-import { getActiveWhatsappPolicy } from "../db/pgsql.js";
-import { getAuthStateDir } from "../baileys/auth-state-dir.js";
 
 configDotenv({ path: ".env" });
 

@@ -1,6 +1,6 @@
 import { config as configDotenv } from "dotenv";
-import logger from "./logger.js";
 import { getLastCommunication, logCommunication } from "../db/pgsql.js";
+import logger from "./logger.js";
 
 configDotenv({ path: ".env" });
 
@@ -60,9 +60,9 @@ export async function ensureTwilioClientReadyOrExit(): Promise<void> {
 
 export async function triggerTwilioOrRemove(phoneNumber: string, reason: string): Promise<boolean> {
   try {
-    const oneWeek = 7 * 24 * 60 * 60 * 1000;
-    const waitingBase = Number(process.env.CONSTANT_WAITING_PERIOD ?? oneWeek);
-    const waitingPeriod = Number.isFinite(waitingBase) ? waitingBase : oneWeek; // ms
+    const fortyEightHours = 48 * 60 * 60 * 1000;
+    const waitingBase = Number(process.env.CONSTANT_WAITING_PERIOD ?? fortyEightHours);
+    const waitingPeriod = Number.isFinite(waitingBase) ? waitingBase : fortyEightHours; // ms
     const lastComm = await getLastCommunication(phoneNumber, reason);
     const now = new Date();
 

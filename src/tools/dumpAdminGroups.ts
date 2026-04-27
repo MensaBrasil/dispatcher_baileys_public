@@ -1,21 +1,21 @@
-import { config as configDotenv } from "dotenv";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
-  makeWASocket,
-  fetchLatestBaileysVersion,
-  DisconnectReason,
   Browsers,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeWASocket,
   useMultiFileAuthState,
   type WASocket,
 } from "baileys";
+import { config as configDotenv } from "dotenv";
 import qrcode from "qrcode-terminal";
-import fs from "node:fs/promises";
-import path from "node:path";
-import logger, { sanitizeLevel } from "../utils/logger.js";
-import type { BoomError } from "../types/ErrorTypes.js";
 import { getAuthStateDir } from "../baileys/auth-state-dir.js";
 import { closePool, getRegistrationPhoneLookupRows, type RegistrationPhoneLookupRow } from "../db/pgsql.js";
-import { processGroupsBaileys, collectMeBases, normalizeUserBase, type MinimalGroup } from "../utils/groups.js";
+import type { BoomError } from "../types/ErrorTypes.js";
+import { collectMeBases, type MinimalGroup, normalizeUserBase, processGroupsBaileys } from "../utils/groups.js";
 import { extractPhoneFromParticipant } from "../utils/jid.js";
+import logger, { sanitizeLevel } from "../utils/logger.js";
 
 configDotenv({ path: ".env" });
 
@@ -168,7 +168,6 @@ function getParticipantBase(participant: MinimalGroup["participants"][number]): 
 
 async function buildAdminEntriesForGroup(
   group: MinimalGroup,
-  meBases: Set<string>,
   resolveLidToPhone: (lid: string) => Promise<string | null>,
   phoneLookup: Map<string, RegistrationLookupValue>,
 ): Promise<AdminEntry[]> {
@@ -226,7 +225,7 @@ async function buildReport(sock: WASocket): Promise<{
   let totalAdmins = 0;
   for (const group of groups) {
     const ownAdminPhone = await findMyAdminPhoneForGroup(group, meBases, resolveLidToPhone);
-    const admins = await buildAdminEntriesForGroup(group, meBases, resolveLidToPhone, phoneLookup);
+    const admins = await buildAdminEntriesForGroup(group, resolveLidToPhone, phoneLookup);
 
     if (ownAdminPhone) {
       const hasCurrentSocket = admins.some((admin) => admin.telefone === ownAdminPhone);

@@ -1,20 +1,20 @@
-import { config as configDotenv } from "dotenv";
-import {
-  makeWASocket,
-  fetchLatestBaileysVersion,
-  DisconnectReason,
-  Browsers,
-  GroupMetadata,
-  GroupParticipant,
-  useMultiFileAuthState,
-} from "baileys";
-import qrcode from "qrcode-terminal";
 import fs from "node:fs/promises";
 import path from "node:path";
-import logger, { sanitizeLevel } from "../utils/logger.js";
-import type { BoomError } from "../types/ErrorTypes.js";
+import {
+  Browsers,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  type GroupMetadata,
+  type GroupParticipant,
+  makeWASocket,
+  useMultiFileAuthState,
+} from "baileys";
+import { config as configDotenv } from "dotenv";
+import qrcode from "qrcode-terminal";
 import { getAuthStateDir } from "../baileys/auth-state-dir.js";
+import type { BoomError } from "../types/ErrorTypes.js";
 import { collectMeBases, isAdminForMe } from "../utils/groups.js";
+import logger, { sanitizeLevel } from "../utils/logger.js";
 
 configDotenv({ path: ".env" });
 
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
         const subgroupsByCommunity: Record<string, number> = {};
         for (const g of values) {
           const parent = g.linkedParent;
-          if (parent && byId[parent] && byId[parent].isCommunity) {
+          if (parent && byId[parent]?.isCommunity) {
             subgroupsByCommunity[parent] = (subgroupsByCommunity[parent] ?? 0) + 1;
           }
         }

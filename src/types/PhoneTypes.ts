@@ -6,6 +6,7 @@ export interface PhoneNumberStatusRow {
   status: "Active" | "Inactive";
   phone_role: "member" | "legal_rep";
   member_age_years: number;
+  managed_phone_count: number;
   is_legal_representative: boolean;
   is_managed_mb_eligible: boolean;
   is_managed_rjb_eligible: boolean;

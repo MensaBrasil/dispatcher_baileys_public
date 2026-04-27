@@ -1,15 +1,15 @@
 import { config as configDotenv } from "dotenv";
-import logger from "../utils/logger.js";
-import { sendToQueue, clearQueue, disconnect as disconnectRedis } from "../db/redis.js";
 import { resolveCommunications } from "../db/pgsql.js";
-import { triggerTwilioOrRemove } from "../utils/twilio.js";
-import { checkGroupType } from "../utils/checkGroupType.js";
+import { clearQueue, disconnect as disconnectRedis, sendToQueue } from "../db/redis.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
-import { checkPhoneNumber } from "../utils/phoneCheck.js";
-import { evaluatePhoneForGroup } from "../utils/whatsappEligibility.js";
-import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/jid.js";
-import type { MinimalGroup } from "../utils/groups.js";
 import type { RemovalPolicy } from "../types/PolicyTypes.js";
+import { checkGroupType } from "../utils/checkGroupType.js";
+import type { MinimalGroup } from "../utils/groups.js";
+import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/jid.js";
+import logger from "../utils/logger.js";
+import { checkPhoneNumber } from "../utils/phoneCheck.js";
+import { triggerTwilioOrRemove } from "../utils/twilio.js";
+import { evaluatePhoneForGroup } from "../utils/whatsappEligibility.js";
 
 configDotenv({ path: ".env" });
 
@@ -141,12 +141,14 @@ export async function removeMembersFromGroups(
 
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);
 
+        const registrationId = checkResult.found && checkResult.mb !== undefined ? checkResult.mb : null;
+
         if (policy.isSuspendedPhone(member)) {
           suspendedInGroupsCount += 1;
           pushRemoval(
             {
               type: "remove",
-              registration_id: checkResult.found ? checkResult.mb! : null,
+              registration_id: registrationId,
               groupId,
               phone: member,
               reason: "Suspended by WhatsApp suspension policy (whatsapp_suspended_numbers).",
@@ -189,7 +191,7 @@ export async function removeMembersFromGroups(
 
         pushRemoval({
           type: "remove",
-          registration_id: checkResult.found ? checkResult.mb! : null,
+          registration_id: registrationId,
           groupId,
           phone: member,
           reason: evaluation.removalReason ?? "Not eligible for managed group",

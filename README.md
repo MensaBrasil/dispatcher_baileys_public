@@ -61,8 +61,8 @@ Regras/filtragem de requisições
 - `IGNORED_ADD_REGISTRATION_IDS`: qualquer `registration_id` listado nessa env é ignorado e não é enfileirado para adição.
 - Só grupos `MB` e `RJB` entram no fluxo gerenciado.
 - Cadastro ativo para add considera pagamento vigente e tambem exclui `transferred`, `deceased`, `expelled` e `suspended_until` ainda vigente.
-- `MB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de adulto (`>= 18`) e houver pelo menos um telefone do membro (`phones`) que esteja autorizado para algum worker e nao esteja suspenso.
-- `RJB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de menor (`<= 17`) e houver pelo menos um telefone de responsável legal (`legal_representatives`) que esteja autorizado para algum worker e nao esteja suspenso.
+- `MB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de adulto (`>= 18`) e houver exatamente um telefone do membro (`phones`) autorizado para algum worker e nao suspenso.
+- `RJB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de menor (`<= 17`) e houver de 1 a 2 telefones principais de responsáveis legais (`legal_representatives.phone`) autorizados para algum worker e nao suspensos.
 
 Erros e logs
 
@@ -116,7 +116,7 @@ Regras em detalhes
   - Em grupos JB, adultos só permanecem se forem responsáveis cadastrados.
   - JB 13-17 sem aceite gov.br são removidos de grupos JB.
   - Grupos AJB não aplicam as regras de idade acima (exceto menores de 13).
-- Twilio/espera: `triggerTwilioOrRemove` registra comunicação e pode acionar flow do Twilio Studio. Retorna `true` apenas quando período de espera terminou, indicando que remoção é segura.
+  - Twilio/espera: `triggerTwilioOrRemove` registra comunicação e pode acionar flow do Twilio Studio. Retorna `true` apenas quando o período de 48 horas terminou, indicando que remoção é segura.
 
 Observações/consistência
 
@@ -139,7 +139,7 @@ O que faz
     - Se não encontrar, loga aviso informativo (sem inserir no DB).
   - Concilia requisições de adição: lê todos os requests ainda `fulfilled = false` do grupo, sem depender de `last_attempt` ou `no_of_attempts`, e usando os 8 últimos dígitos apenas dos telefones válidos para o tipo do grupo, confere se a entrada já se concretizou; se sim, marca `registerWhatsappAddFulfilled(request_id)`.
     - `MB`: somente telefones de `phones`.
-    - `RJB`: somente telefones de `legal_representatives`.
+    - `RJB`: somente telefones principais de `legal_representatives.phone`.
 
 Entradas/saídas e formatos
 

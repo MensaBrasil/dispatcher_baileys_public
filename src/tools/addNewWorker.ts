@@ -1,22 +1,22 @@
-import { config as configDotenv } from "dotenv";
-import {
-  makeWASocket,
-  fetchLatestBaileysVersion,
-  DisconnectReason,
-  Browsers,
-  type GroupMetadata,
-  type GroupParticipant,
-  useMultiFileAuthState,
-} from "baileys";
-import qrcode from "qrcode-terminal";
 import fs from "node:fs/promises";
 import path from "node:path";
-import logger, { sanitizeLevel } from "../utils/logger.js";
-import type { BoomError } from "../types/ErrorTypes.js";
+import {
+  Browsers,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  type GroupMetadata,
+  type GroupParticipant,
+  makeWASocket,
+  useMultiFileAuthState,
+} from "baileys";
 import { Command } from "commander";
-import { getAllWhatsAppWorkers } from "../db/pgsql.js";
-import { delaySecs } from "../utils/delay.js";
+import { config as configDotenv } from "dotenv";
+import qrcode from "qrcode-terminal";
 import { getAuthStateDir } from "../baileys/auth-state-dir.js";
+import { getAllWhatsAppWorkers } from "../db/pgsql.js";
+import type { BoomError } from "../types/ErrorTypes.js";
+import { delaySecs } from "../utils/delay.js";
+import logger, { sanitizeLevel } from "../utils/logger.js";
 
 configDotenv({ path: ".env" });
 

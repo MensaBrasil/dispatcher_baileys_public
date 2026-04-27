@@ -1,4 +1,4 @@
-import type { WASocket, GroupMetadata } from "baileys";
+import type { GroupMetadata, WASocket } from "baileys";
 
 type BaileysParticipant =
   | { id: string; admin?: "admin" | "superadmin" | null; jid?: string; lid?: string; phoneNumber?: string }
