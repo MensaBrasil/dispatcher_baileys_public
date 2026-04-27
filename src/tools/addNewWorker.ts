@@ -49,7 +49,7 @@ async function main(): Promise<void> {
 
   const workerDigits = toDigitsPhone(opts.worker);
   if (!workerDigits || workerDigits.length < 7) {
-    logger.fatal({ worker: opts.worker }, "Telefone do worker inválido");
+    logger.fatal({ worker: opts.worker }, "Telefone do operador inválido");
     process.exit(1);
   }
   const workerJid = toJidFromDigits(workerDigits);
@@ -58,11 +58,11 @@ async function main(): Promise<void> {
     const rows = await getAllWhatsAppWorkers();
     const exists = rows.some((r) => toDigitsPhone(r.worker_phone) === workerDigits);
     if (!exists) {
-      logger.fatal({ worker: workerDigits }, "Worker não encontrado no banco de dados");
+      logger.fatal({ worker: workerDigits }, "Operador não encontrado no banco de dados");
       process.exit(1);
     }
   } catch (err) {
-    logger.fatal({ err }, "Erro ao verificar worker no banco de dados");
+    logger.fatal({ err }, "Erro ao verificar operador no banco de dados");
     process.exit(1);
   }
 
@@ -172,17 +172,17 @@ async function main(): Promise<void> {
               alreadyMemberAnnounce += 1;
               announceEntries.push({ id: ag.id, subject: ag.subject, wasMember: true, action: "already" });
             } else if (opts.dryRun) {
-              logger.info({ announceId: ag.id }, `[dry-run] Adicionaria ${workerJid} no grupo de avisos`);
+              logger.info({ announceId: ag.id }, `[simulação] Adicionaria ${workerJid} no grupo de avisos`);
               announceEntries.push({ id: ag.id, subject: ag.subject, wasMember: false, action: "dry-run-add" });
             } else if (canManageAnnounce || canManageCommunity) {
               try {
                 await sock.groupParticipantsUpdate(ag.id, [workerJid], "add");
                 addCount += 1;
-                logger.info({ announceId: ag.id }, `Adicionado ${workerJid} ao grupo de avisos`);
+                logger.info({ announceId: ag.id }, `${workerJid} adicionado ao grupo de avisos`);
                 await delaySecs(0, 120);
                 announceEntries.push({ id: ag.id, subject: ag.subject, wasMember: false, action: "added" });
               } catch (err) {
-                logger.error({ err, announceId: ag.id }, "Falha ao adicionar worker no grupo de avisos");
+                logger.error({ err, announceId: ag.id }, "Falha ao adicionar operador no grupo de avisos");
                 announceEntries.push({
                   id: ag.id,
                   subject: ag.subject,
@@ -253,7 +253,7 @@ async function main(): Promise<void> {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] sessão encerrada: apague a pasta local auth e faça login novamente.");
+        logger.fatal({ code }, "[wa] sessão encerrada: apague a pasta local de autenticação e faça login novamente.");
         process.exit(1);
       }
       logger.warn({ code }, "[wa] conexão fechada antes de concluir a ferramenta");
@@ -262,6 +262,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error({ err }, "Erro não tratado em tools/addWorkerToCommunityAnnouncements");
+  logger.error({ err }, "Erro não tratado em tools/addNewWorker");
   process.exit(1);
 });

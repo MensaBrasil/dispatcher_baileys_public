@@ -4,9 +4,9 @@ import logger from "../utils/logger.js";
 import { ensureTwilioClientReadyOrExit } from "../utils/twilio.js";
 
 export async function runStartupPreflight(): Promise<void> {
-  logger.info("[preflight] starting startup checks");
+  logger.info("[preflight] iniciando verificações de inicialização");
   await runPostgresPreflight();
   await runRedisPreflight();
   await ensureTwilioClientReadyOrExit();
-  logger.info("[preflight] startup checks passed");
+  logger.info("[preflight] verificações de inicialização concluídas com sucesso");
 }

@@ -19,6 +19,33 @@ export type GroupEligibilityResult = {
   waitForGracePeriod: boolean;
 };
 
+export const COMMUNICATION_REASONS = {
+  membroInativo: "Membro Inativo",
+  membroNaoEncontradoNoBanco: "Membro não encontrado no banco",
+} as const;
+
+export type CommunicationReason = (typeof COMMUNICATION_REASONS)[keyof typeof COMMUNICATION_REASONS];
+
+export const REMOVAL_REASONS = {
+  telefoneNaoEncontrado: "Telefone não encontrado no banco.",
+  membroInativoMb: "Membro inativo para elegibilidade em grupo MB.",
+  menorEmGrupoMb: "Membro menor de 18 anos não pode permanecer em grupos MB.",
+  apenasResponsavelMb:
+    "Telefone cadastrado apenas como responsável legal, não como telefone de membro elegível para MB.",
+  semTelefoneMembroMb: "Telefone não cadastrado na lista de telefones de membro exigida para grupos MB.",
+  inelegivelMb: "Telefone não atende aos critérios de elegibilidade para MB.",
+  membroInativoRjb: "Menor vinculado inativo para elegibilidade em grupo RJB.",
+  responsavelSemMenorRjb: "Responsável legal não está mais vinculado a menor de 17 anos ou menos para grupos RJB.",
+  apenasMembroRjb:
+    "Telefone cadastrado apenas como telefone de membro, não como telefone de responsável legal exigido para RJB.",
+  semTelefoneResponsavelRjb:
+    "Telefone não cadastrado na lista de telefones de responsável legal exigida para grupos RJB.",
+  inelegivelRjb: "Telefone não atende aos critérios de elegibilidade para RJB.",
+  inelegivelGrupoGerenciado: "Telefone não elegível para grupo gerenciado.",
+  suspensoWhatsapp: "Telefone suspenso pela política de WhatsApp (`whatsapp_suspended_numbers`).",
+  saiuDoGrupo: "Saiu do grupo.",
+} as const;
+
 export function isEligibleRegistrationForGroup(
   registration: RegistrationEligibility | undefined,
   groupType: GroupType | null,
@@ -47,7 +74,7 @@ export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: 
     return {
       shouldAdd: false,
       shouldRemove: true,
-      removalReason: "Phone number is not associated with any registration in the database.",
+      removalReason: REMOVAL_REASONS.telefoneNaoEncontrado,
       waitForGracePeriod: true,
     };
   }
@@ -66,14 +93,14 @@ export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: 
       shouldAdd: false,
       shouldRemove: true,
       removalReason: checkResult.has_inactive_mb
-        ? "Inactive member account for MB eligibility."
+        ? REMOVAL_REASONS.membroInativoMb
         : checkResult.has_member_minor_phone
-          ? "Member is under 18 and cannot remain in MB groups."
+          ? REMOVAL_REASONS.menorEmGrupoMb
           : checkResult.has_legal_rep_phone && !checkResult.has_member_phone
-            ? "Phone is registered only as a legal representative, not as a member phone eligible for MB."
+            ? REMOVAL_REASONS.apenasResponsavelMb
             : !checkResult.has_member_phone
-              ? "Phone is not registered in the member phone list required for MB groups."
-              : "Phone does not meet the MB eligibility criteria.",
+              ? REMOVAL_REASONS.semTelefoneMembroMb
+              : REMOVAL_REASONS.inelegivelMb,
       waitForGracePeriod: Boolean(checkResult.has_inactive_mb),
     };
   }
@@ -92,14 +119,14 @@ export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: 
       shouldAdd: false,
       shouldRemove: true,
       removalReason: checkResult.has_inactive_rjb
-        ? "Inactive linked minor account for RJB eligibility."
+        ? REMOVAL_REASONS.membroInativoRjb
         : checkResult.has_legal_rep_for_adult
-          ? "Legal representative no longer linked to a minor aged 17 or younger for RJB groups."
+          ? REMOVAL_REASONS.responsavelSemMenorRjb
           : checkResult.has_member_phone && !checkResult.has_legal_rep_phone
-            ? "Phone is registered only as a member phone, not as a legal representative phone required for RJB groups."
+            ? REMOVAL_REASONS.apenasMembroRjb
             : !checkResult.has_legal_rep_phone
-              ? "Phone is not registered in the legal representative phone list required for RJB groups."
-              : "Phone does not meet the RJB eligibility criteria.",
+              ? REMOVAL_REASONS.semTelefoneResponsavelRjb
+              : REMOVAL_REASONS.inelegivelRjb,
       waitForGracePeriod: Boolean(checkResult.has_inactive_rjb),
     };
   }

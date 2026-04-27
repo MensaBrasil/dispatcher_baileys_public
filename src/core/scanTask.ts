@@ -18,6 +18,7 @@ import {
 } from "../utils/jid.js";
 import logger from "../utils/logger.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
+import { REMOVAL_REASONS } from "../utils/whatsappEligibility.js";
 
 configDotenv({ path: ".env" });
 const scanDelay = Number.parseInt(process.env.SCAN_DELAY ?? "1", 10) || 0;
@@ -44,18 +45,18 @@ export async function scanGroups(
     }
     try {
       const groupName = group.subject ?? group.name ?? group.id;
-      logger.info({ group: groupName }, `Scanning group: ${groupName}`);
+      logger.info({ group: groupName }, `Escaneando grupo: ${groupName}`);
 
       const groupId = group.id;
       // Best-effort: send a seen/read signal for the latest message in this group
       try {
         if (opts?.sendSeen) await opts.sendSeen(groupId);
       } catch (err) {
-        logger.debug({ err, group: groupName }, "Failed to send seen signal (non-fatal)");
+        logger.debug({ err, group: groupName }, "Falha ao enviar sinal de visualização (não fatal)");
       }
 
       const previousMembers = await getPreviousGroupMembers(groupId);
-      logger.debug({ count: previousMembers.length }, "Previous members count");
+      logger.debug({ count: previousMembers.length }, "Quantidade de membros anteriores");
 
       const participants = group.participants;
       const resolvedMembers = await Promise.all(
@@ -66,7 +67,7 @@ export async function scanGroups(
         ),
       );
       const groupMembers = resolvedMembers.filter((x): x is string => Boolean(x));
-      logger.debug({ count: groupMembers.length }, "Current members count");
+      logger.debug({ count: groupMembers.length }, "Quantidade de membros atuais");
 
       const wppQueue = await getUnfulfilledGroupRequestsForScan(groupId);
       const groupType = await checkGroupType(groupName);
@@ -92,7 +93,7 @@ export async function scanGroups(
             await registerWhatsappAddFulfilled(request.request_id);
             logger.info(
               { request_id: request.request_id, phone, group: groupName, groupType },
-              `Request ${request.request_id} for phone ${phone} is fulfilled in group ${groupName}.`,
+              `Solicitação ${request.request_id} do telefone ${phone} foi atendida no grupo ${groupName}.`,
             );
             break;
           }
@@ -101,11 +102,8 @@ export async function scanGroups(
 
       for (const previousMember of previousMembers) {
         if (!groupMembers.includes(previousMember)) {
-          logger.info(
-            { phone: previousMember, group: groupName },
-            `Number ${previousMember} is no longer in the group.`,
-          );
-          await recordUserExitFromGroup(previousMember, groupId, "Left group");
+          logger.info({ phone: previousMember, group: groupName }, `Número ${previousMember} não está mais no grupo.`);
+          await recordUserExitFromGroup(previousMember, groupId, REMOVAL_REASONS.saiuDoGrupo);
         }
       }
 
@@ -121,25 +119,22 @@ export async function scanGroups(
             if (registrationId === undefined || status === undefined) {
               logger.warn(
                 { phone: member, group: groupName },
-                `Number ${member} is new to the group, but DB match is incomplete.`,
+                `Número ${member} é novo no grupo, mas o vínculo no banco está incompleto.`,
               );
               continue;
             }
-            logger.info(
-              { phone: member, mb: registrationId, group: groupName },
-              `Number ${member} is new to the group.`,
-            );
+            logger.info({ phone: member, mb: registrationId, group: groupName }, `Número ${member} é novo no grupo.`);
             await recordUserEntryToGroup(registrationId, member, groupId, status);
           } else {
             logger.warn(
               { phone: member, group: groupName },
-              `Number ${member} is new to the group, but no DB match found.`,
+              `Número ${member} é novo no grupo, mas não foi encontrado vínculo no banco.`,
             );
           }
         }
       }
     } catch (error) {
-      logger.error({ err: error, group: group.name ?? group.subject ?? group.id }, `Error scanning group`);
+      logger.error({ err: error, group: group.name ?? group.subject ?? group.id }, "Erro ao escanear grupo");
     }
   }
 }

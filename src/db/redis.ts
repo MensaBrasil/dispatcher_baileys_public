@@ -22,8 +22,8 @@ function getClient(): RedisClientType {
         port,
         reconnectStrategy: (retries) => {
           if (retries > 20) {
-            logger.error("Too many attempts to reconnect. Redis connection terminated");
-            return new Error("Too many retries.");
+            logger.error("Muitas tentativas de reconexão. Conexão com Redis encerrada");
+            return new Error("Muitas tentativas de reconexão.");
           }
           return Math.min(retries * 500, 5000);
         },
@@ -31,18 +31,18 @@ function getClient(): RedisClientType {
     });
 
     client.on("error", (err) => {
-      logger.error({ err }, "[redis] client error");
+      logger.error({ err }, "[redis] erro no cliente");
     });
     client.on("connect", () => {
-      logger.debug("[redis] connecting...");
+      logger.debug("[redis] conectando...");
     });
     client.on("ready", () => {
       isConnected = true;
-      logger.info("[redis] connected");
+      logger.info("[redis] conectado");
     });
     client.on("end", () => {
       isConnected = false;
-      logger.warn("[redis] disconnected");
+      logger.warn("[redis] desconectado");
     });
   }
   return client;
@@ -63,18 +63,18 @@ async function connect(): Promise<void> {
 }
 
 export async function runRedisPreflight(): Promise<void> {
-  logger.info({ service: "redis" }, "[preflight] starting redis checks");
+  logger.info({ service: "redis" }, "[preflight] iniciando verificações do Redis");
 
   try {
     await connect();
     const c = getClient();
     await c.ping();
   } catch (err) {
-    logger.error({ err, service: "redis" }, "[preflight] redis connectivity check failed");
-    throw new Error("Startup pre-flight failed: Redis connectivity check failed.", { cause: err });
+    logger.error({ err, service: "redis" }, "[preflight] falha na verificação de conectividade do Redis");
+    throw new Error("Pré-verificação de inicialização falhou: falha na conectividade com Redis.", { cause: err });
   }
 
-  logger.info({ service: "redis" }, "[preflight] redis checks passed");
+  logger.info({ service: "redis" }, "[preflight] verificações do Redis concluídas com sucesso");
 }
 
 async function disconnect(): Promise<void> {
@@ -92,7 +92,7 @@ async function testRedisConnection(): Promise<void> {
     await runRedisPreflight();
     await disconnect();
   } catch (error) {
-    logger.error({ err: error }, "Failed to connect to Redis");
+    logger.error({ err: error }, "Falha ao conectar ao Redis");
     process.exit(1);
   }
 }
@@ -100,7 +100,7 @@ async function testRedisConnection(): Promise<void> {
 async function sendToQueue<T extends JsonValue>(objArray: T[], queueName: QueueName): Promise<boolean> {
   try {
     if (!objArray || objArray.length === 0) {
-      logger.info({ queueName }, "No objects to send to queue");
+      logger.info({ queueName }, "Nenhum objeto para enviar à fila");
       return false;
     }
     await connect();
@@ -109,7 +109,7 @@ async function sendToQueue<T extends JsonValue>(objArray: T[], queueName: QueueN
     await c.rPush(queueName, jsonArray);
     return true;
   } catch (error) {
-    logger.error({ err: error, queueName }, "Error sending to queue");
+    logger.error({ err: error, queueName }, "Erro ao enviar para a fila");
     return false;
   }
 }
@@ -127,7 +127,7 @@ async function getAllFromQueue<T = unknown>(queueName: QueueName): Promise<T[]> 
       }
     });
   } catch (error) {
-    logger.error({ err: error, queueName }, `Error getting all from ${queueName}`);
+    logger.error({ err: error, queueName }, `Erro ao buscar todos os itens de ${queueName}`);
     return [] as T[];
   }
 }
@@ -138,7 +138,7 @@ async function getQueueLength(queueName: QueueName): Promise<number> {
     const c = getClient();
     return await c.lLen(queueName);
   } catch (error) {
-    logger.error({ err: error, queueName }, `Error getting length of ${queueName}`);
+    logger.error({ err: error, queueName }, `Erro ao buscar tamanho de ${queueName}`);
     return 0;
   }
 }
@@ -150,7 +150,7 @@ async function clearQueue(queueName: QueueName): Promise<boolean> {
     await c.del(queueName);
     return true;
   } catch (error) {
-    logger.error({ err: error, queueName }, `Error clearing ${queueName}`);
+    logger.error({ err: error, queueName }, `Erro ao limpar ${queueName}`);
     return false;
   }
 }

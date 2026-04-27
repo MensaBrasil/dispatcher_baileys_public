@@ -94,7 +94,7 @@ async function findGroupsForPhone(
       registration_id: null,
       groupId: group.id,
       phone: matchedPhone ?? fallbackPhone,
-      reason: "Manual removal tool request.",
+      reason: "Solicitação manual de remoção pela ferramenta.",
       communityId: group.announceGroup ?? null,
     });
   }
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   const policy = await getActiveWhatsappPolicy();
   const isInvitedNumber = buildProtectedPhoneMatcherFromList(policy.invitedPhones);
   if (isInvitedNumber(targetPhone)) {
-    logger.fatal({ phone: targetPhone }, "Telefone protegido por invited policy e não pode ser removido");
+    logger.fatal({ phone: targetPhone }, "Telefone protegido pela política de convidados e não pode ser removido");
     process.exit(1);
   }
   const targetPhones = new Set(expandBrazilianPhoneVariants(targetPhone));
@@ -215,10 +215,10 @@ async function main(): Promise<void> {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] sessão encerrada: apague a pasta local auth e autentique novamente");
+        logger.fatal({ code }, "[wa] sessão encerrada: apague a pasta local de autenticação e autentique novamente");
         process.exit(1);
       }
-      logger.warn({ code }, "[wa] conexão fechada antes da conclusão da tool");
+      logger.warn({ code }, "[wa] conexão fechada antes da conclusão da ferramenta");
     }
   });
 }

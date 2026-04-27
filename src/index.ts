@@ -26,12 +26,12 @@ async function main() {
   // CLI options
   const program = new Command();
   program
-    .option("--add", "Run add task")
-    .option("--remove", "Run remove task")
-    .option("--scan", "Run scan task (group membership tracking)")
-    .option("--community", "Restrict removals to community and announce groups only")
-    .option("--comunity", "Alias for --community")
-    .option("--pairing", "Use pairing code for login (requires PAIRING_PHONE env var)");
+    .option("--add", "Executa a tarefa de adição")
+    .option("--remove", "Executa a tarefa de remoção")
+    .option("--scan", "Executa a tarefa de scan (rastreamento de membros dos grupos)")
+    .option("--community", "Restringe remoções apenas a comunidades e grupos de avisos")
+    .option("--comunity", "Apelido para --community")
+    .option("--pairing", "Usa código de pareamento para login (exige a env PAIRING_PHONE)");
   program.parse(process.argv);
   const opts = program.opts<{
     add?: boolean;
@@ -55,10 +55,10 @@ async function main() {
       runRemove,
       runScan,
       communityMode,
-      removalScope: communityMode ? "community-only" : "all-admin",
+      removalScope: communityMode ? "apenas-comunidade" : "todos-admin",
       authMethod: pairingCodeMode ? "pairing" : "qr",
     },
-    "Task configuration resolved",
+    "Configuração de tarefas resolvida",
   );
 
   await runStartupPreflight();
@@ -81,12 +81,12 @@ async function main() {
         await sock.signalRepository.lidMapping.storeLIDPNMappings([{ lid, pn: phone }]);
       }
     } catch (err) {
-      logger.debug({ err, lid }, "Failed to store LID mapping in memory store");
+      logger.debug({ err, lid }, "Falha ao armazenar mapeamento LID na memória");
     }
     try {
       await upsertLidMapping(lid, phone, source);
     } catch (err) {
-      logger.warn({ err, lid }, "Failed to persist LID mapping to DB (ensure whatsapp_lid_mappings exists)");
+      logger.warn({ err, lid }, "Falha ao persistir mapeamento LID no banco (confira se whatsapp_lid_mappings existe)");
     }
   }
 
@@ -109,11 +109,11 @@ async function main() {
       pairingCodeRequested = true;
       logger.warn(
         { code },
-        "Pairing code gerado; entre em WhatsApp > Conectados > Adicionar dispositivo e insira o código.",
+        "Código de pareamento gerado; entre em WhatsApp > Conectados > Adicionar dispositivo e insira o código.",
       );
     } catch (err) {
       pairingCodeRequested = false;
-      logger.error({ err }, "Falha ao gerar pairing code");
+      logger.error({ err }, "Falha ao gerar código de pareamento");
       throw err;
     }
   }
@@ -131,11 +131,11 @@ async function main() {
       if (!isConnected) {
         // mark to run immediately once connection is restored
         pendingImmediateRunOnOpen = true;
-        logger.warn("[wa] not connected; skipping cycle run");
+        logger.warn("[wa] não conectado; pulando execução do ciclo");
         return;
       }
       if (isCycleRunning) {
-        logger.warn("Cycle already running; skipping overlapping run");
+        logger.warn("Ciclo já em execução; pulando execução sobreposta");
         return;
       }
       isCycleRunning = true;
@@ -158,7 +158,7 @@ async function main() {
         const toSave = managedAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
         await saveGroupsToList(toSave);
       } catch (err) {
-        logger.warn({ err }, "Failed to save groups list to DB");
+        logger.warn({ err }, "Falha ao salvar lista de grupos no banco");
       }
 
       const activePolicy = await getActiveWhatsappPolicy();
@@ -233,101 +233,105 @@ async function main() {
 
         // Render console summary
         // Header
-        logger.info("\n\x1b[1m=== REMOVAL REPORT SUMMARY ===\x1b[0m");
+        logger.info("\n\x1b[1m=== RESUMO DO RELATÓRIO DE REMOÇÃO ===\x1b[0m");
         // High-level counts
-        logger.info(`\x1b[36mTotal groups: ${totalGroupsAll}\x1b[0m`);
-        logger.info(`\x1b[36mTotal groups processed (add/scan): ${managedAdminGroups.length}\x1b[0m`);
-        logger.info(`\x1b[36mTotal groups processed for removal (incl. community): ${removalGroupsProcessed}\x1b[0m`);
-        logger.info(`\x1b[31mBot is not admin in: ${notAdminCount} groups\x1b[0m\n`);
+        logger.info(`\x1b[36mTotal de grupos: ${totalGroupsAll}\x1b[0m`);
+        logger.info(`\x1b[36mTotal de grupos processados (adição/escaneamento): ${managedAdminGroups.length}\x1b[0m`);
+        logger.info(
+          `\x1b[36mTotal de grupos processados para remoção (incluindo comunidade): ${removalGroupsProcessed}\x1b[0m`,
+        );
+        logger.info(`\x1b[31mBot não é admin em: ${notAdminCount} grupos\x1b[0m\n`);
 
         // Members by issue
 
-        logger.info("\x1b[1mMember Count by Issue:\x1b[0m");
+        logger.info("\x1b[1mContagem de membros por problema:\x1b[0m");
         if (removeSummary) {
-          logger.info(`\x1b[33m• Total unique members affected: ${removeSummary.uniqueMembersAffected}`);
+          logger.info(`\x1b[33m• Total de membros únicos afetados: ${removeSummary.uniqueMembersAffected}`);
 
           logger.info(
-            `• Inactive status: ${removeSummary.atleast1inactiveCount} members (${removeSummary.totalInactiveCount} total occurrences)`,
+            `• Status inativo: ${removeSummary.atleast1inactiveCount} membros (${removeSummary.totalInactiveCount} ocorrências totais)`,
           );
 
           logger.info(
-            `• Not in database: ${removeSummary.atleast1notfoundCount} members (${removeSummary.totalNotFoundCount} total occurrences)`,
+            `• Não encontrados no banco: ${removeSummary.atleast1notfoundCount} membros (${removeSummary.totalNotFoundCount} ocorrências totais)`,
           );
 
           logger.info(
-            `• Not eligible for MB: ${removeSummary.atleast1IneligibleMBCount} members (${removeSummary.totalIneligibleMBCount} total occurrences)`,
+            `• Não elegíveis para MB: ${removeSummary.atleast1IneligibleMBCount} membros (${removeSummary.totalIneligibleMBCount} ocorrências totais)`,
           );
           logger.info(
-            `• Not eligible for RJB: ${removeSummary.atleast1IneligibleRJBCount} members (${removeSummary.totalIneligibleRJBCount} total occurrences)\x1b[0m\n`,
+            `• Não elegíveis para RJB: ${removeSummary.atleast1IneligibleRJBCount} membros (${removeSummary.totalIneligibleRJBCount} ocorrências totais)\x1b[0m\n`,
           );
 
           if (removeSummary.removalReasons.length > 0) {
-            logger.info("\x1b[1mSpecific Removal Reasons:\x1b[0m");
+            logger.info("\x1b[1mMotivos específicos de remoção:\x1b[0m");
             for (const item of removeSummary.removalReasons) {
               logger.info(
-                `• ${item.reason}: ${item.uniqueMembers} members (${item.totalOccurrences} total occurrences)`,
+                `• ${item.reason}: ${item.uniqueMembers} membros (${item.totalOccurrences} ocorrências totais)`,
               );
             }
             logger.info("");
           }
         } else {
-          logger.info("• No removals evaluated this cycle.\x1b[0m\n");
+          logger.info("• Nenhuma remoção avaliada neste ciclo.\x1b[0m\n");
         }
 
         // Pending additions
 
-        logger.info("\x1b[1mPending Additions:\x1b[0m");
+        logger.info("\x1b[1mAdições pendentes:\x1b[0m");
         if (addSummary) {
-          logger.info(`\x1b[32m• Members awaiting addition: ${addSummary.atleast1PendingAdditionsCount}`);
-          logger.info(`• Total pending additions: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
+          logger.info(`\x1b[32m• Membros aguardando adição: ${addSummary.atleast1PendingAdditionsCount}`);
+          logger.info(`• Total de adições pendentes: ${addSummary.totalPendingAdditionsCount}\x1b[0m\n`);
           if (addSummary.ignoredRegistrationsCount > 0) {
             logger.info(
-              `\x1b[33m• Ignored by env config: ${addSummary.ignoredRegistrationsCount} members (${addSummary.ignoredRequestsCount} requests skipped)\x1b[0m`,
+              `\x1b[33m• Ignorados por configuração de env: ${addSummary.ignoredRegistrationsCount} membros (${addSummary.ignoredRequestsCount} solicitações puladas)\x1b[0m`,
             );
           }
           if (addSummary.suspendedRegistrationsCount > 0) {
             logger.info(
-              `\x1b[33m• Blocked by suspended policy: ${addSummary.suspendedRegistrationsCount} members (${addSummary.suspendedRequestsCount} requests skipped)\x1b[0m\n`,
+              `\x1b[33m• Bloqueados pela política de suspensão: ${addSummary.suspendedRegistrationsCount} membros (${addSummary.suspendedRequestsCount} solicitações puladas)\x1b[0m\n`,
             );
           }
         } else {
-          logger.info("\x1b[32m• Add task disabled this cycle\x1b[0m\n");
+          logger.info("\x1b[32m• Tarefa de adição desativada neste ciclo\x1b[0m\n");
         }
 
         // Special numbers
-        logger.info("\x1b[1mSpecial Numbers:\x1b[0m");
+        logger.info("\x1b[1mNúmeros especiais:\x1b[0m");
         if (removeSummary) {
           logger.info(
-            `\x1b[35m• Invited list: ${activePolicy.invitedPhones.length} numbers (${removeSummary.invitedInGroupsCount} total occurrences)`,
+            `\x1b[35m• Lista de convidados: ${activePolicy.invitedPhones.length} números (${removeSummary.invitedInGroupsCount} ocorrências totais)`,
           );
           logger.info(
-            `• Suspended list: ${activePolicy.suspendedPhones.length} numbers (${removeSummary.suspendedInGroupsCount} total occurrences)\x1b[0m\n`,
+            `• Lista de suspensos: ${activePolicy.suspendedPhones.length} números (${removeSummary.suspendedInGroupsCount} ocorrências totais)\x1b[0m\n`,
           );
         } else {
-          logger.info(`\x1b[35m• Invited list: ${activePolicy.invitedPhones.length} numbers (0 total occurrences)`);
           logger.info(
-            `• Suspended list: ${activePolicy.suspendedPhones.length} numbers (0 total occurrences)\x1b[0m\n`,
+            `\x1b[35m• Lista de convidados: ${activePolicy.invitedPhones.length} números (0 ocorrências totais)`,
+          );
+          logger.info(
+            `• Lista de suspensos: ${activePolicy.suspendedPhones.length} números (0 ocorrências totais)\x1b[0m\n`,
           );
         }
 
         // Queues
 
-        logger.info("\x1b[1mTotal items in queue:\x1b[0m");
+        logger.info("\x1b[1mTotal de itens na fila:\x1b[0m");
 
-        logger.info(`\x1b[32m• Add Queue: ${addQueueLength}`);
+        logger.info(`\x1b[32m• Fila de adição: ${addQueueLength}`);
 
-        logger.info(`• Remove Queue: ${removeQueueLength}\x1b[0m`);
+        logger.info(`• Fila de remoção: ${removeQueueLength}\x1b[0m`);
 
         // Save details JSON (best-effort)
         try {
           await writeFile("report_details.json", JSON.stringify(details, null, 2), "utf8");
 
-          logger.info("\x1b[1mDetailed report saved to:\x1b[0m \x1b[36mreport_details.json\x1b[0m");
+          logger.info("\x1b[1mRelatório detalhado salvo em:\x1b[0m \x1b[36mreport_details.json\x1b[0m");
         } catch (err) {
-          logger.warn({ err }, "Error writing report details to file");
+          logger.warn({ err }, "Erro ao gravar relatório detalhado em arquivo");
         }
       } catch (err) {
-        logger.warn({ err }, "Failed to print cycle report summary");
+        logger.warn({ err }, "Falha ao imprimir resumo do relatório do ciclo");
       }
 
       try {
@@ -342,20 +346,20 @@ async function main() {
           }
         }
       } catch (err) {
-        logger.warn({ err }, "Uptime check failed");
+        logger.warn({ err }, "Falha na verificação de uptime");
       }
     } catch (err) {
       const code = (err as BoomError)?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
-        logger.fatal({ err }, "Session logged out during cycle; exiting");
+        logger.fatal({ err }, "Sessão desconectada durante o ciclo; encerrando");
         process.exit(1);
       }
       const message = (err as BoomError)?.output?.payload?.message;
       if (message === "Connection Closed" || code === 428) {
-        logger.fatal({ err }, "Closed connection detected during cycle; exiting");
+        logger.fatal({ err }, "Conexão fechada detectada durante o ciclo; encerrando");
         process.exit(1);
       }
-      logger.error({ err }, "Error running tasks in cycle");
+      logger.error({ err }, "Erro ao executar tarefas do ciclo");
     } finally {
       isCycleRunning = false;
     }
@@ -366,7 +370,7 @@ async function main() {
     loopStarted = true;
     logger.info(
       { intervalSeconds: cycleDelaySeconds, jitterSeconds: cycleJitterSeconds },
-      "Starting main loop (one run per interval)",
+      "Iniciando loop principal (uma execução por intervalo)",
     );
     // First run immediately
     await runCycleOnce();
@@ -404,21 +408,21 @@ async function main() {
         if (qr !== lastQR) {
           lastQR = qr;
           qrcode.generate(qr, { small: true });
-          logger.info("Scan the QR code in WhatsApp > Connected devices");
+          logger.info("Escaneie o QR code no WhatsApp > Dispositivos conectados");
         }
       }
 
       if (connection === "open") {
         isConnected = true;
         reconnectAttempts = 0;
-        logger.info("[wa] connection opened.");
+        logger.info("[wa] conexão aberta.");
         // Start the orchestrator loop once after connection is open
         if (!loopStarted) {
-          startLoop().catch((err) => logger.error({ err }, "Loop start error"));
+          startLoop().catch((err) => logger.error({ err }, "Erro ao iniciar loop"));
         } else if (pendingImmediateRunOnOpen && !isCycleRunning) {
           pendingImmediateRunOnOpen = false;
           // Trigger an immediate cycle after reconnect
-          runCycleOnce().catch((err) => logger.error({ err }, "Immediate run after reconnect failed"));
+          runCycleOnce().catch((err) => logger.error({ err }, "Execução imediata após reconexão falhou"));
         }
         return;
       }
@@ -431,25 +435,25 @@ async function main() {
         if (isLoggedOut) {
           logger.fatal(
             { code },
-            "[wa] connection closed: Session logged out. Delete the local auth folder and link again.",
+            "[wa] conexão fechada: sessão encerrada. Apague a pasta local de autenticação e conecte novamente.",
           );
           process.exit(1);
         }
 
         reconnectAttempts += 1;
         if (reconnectAttempts > maxReconnectAttempts) {
-          logger.fatal({ attempts: reconnectAttempts }, "Exceeded max reconnect attempts; exiting");
+          logger.fatal({ attempts: reconnectAttempts }, "Limite de tentativas de reconexão excedido; encerrando");
           process.exit(1);
         }
 
         const backoff = Math.min(maxBackoffMs, 1000 * 2 ** (reconnectAttempts - 1));
-        logger.warn({ code, attempt: reconnectAttempts, backoff }, "[wa] connection closed; reinitializing socket...");
+        logger.warn({ code, attempt: reconnectAttempts, backoff }, "[wa] conexão fechada; reinicializando conexão...");
 
         setTimeout(() => {
           // Mark to run immediately once connection is restored
           pendingImmediateRunOnOpen = true;
           initSocket().catch((err) => {
-            logger.error({ err }, "Socket re-init failed");
+            logger.error({ err }, "Falha ao reinicializar conexão");
           });
         }, backoff);
       }
@@ -469,7 +473,7 @@ async function main() {
           }
         }
       } catch (err) {
-        logger.debug({ err }, "Failed to handle lid-mapping.update event (non-fatal)");
+        logger.debug({ err }, "Falha ao tratar evento lid-mapping.update (não fatal)");
       }
     });
   }
@@ -481,7 +485,7 @@ async function main() {
   const shutdown = (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.info({ signal }, "Shutting down...");
+    logger.info({ signal }, "Encerrando...");
     setTimeout(() => process.exit(0), 50);
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
@@ -489,16 +493,16 @@ async function main() {
 }
 
 main().catch((error) => {
-  logger.error({ err: error }, "Unhandled error");
+  logger.error({ err: error }, "Erro não tratado");
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  logger.error({ err: reason }, "Unhandled promise rejection");
+  logger.error({ err: reason }, "Rejeição de promise não tratada");
   process.exit(1);
 });
 
 process.on("uncaughtException", (error) => {
-  logger.error({ err: error }, "Uncaught exception");
+  logger.error({ err: error }, "Exceção não capturada");
   process.exit(1);
 });

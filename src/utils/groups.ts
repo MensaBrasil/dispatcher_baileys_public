@@ -87,7 +87,7 @@ export async function processGroupsBaileys(
 
   const meBases = collectMeBases(sock);
   if (!meBases.size) {
-    throw new Error("Socket user JID not available");
+    throw new Error("JID do usuário do socket não disponível");
   }
 
   const normalized: MinimalGroup[] = allGroups.map((g: GroupMetadata) => ({

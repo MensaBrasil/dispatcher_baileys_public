@@ -33,7 +33,7 @@ async function getTwilioClient(): Promise<TwilioClient | null> {
     if (!factory) return null;
     return factory(accountSid, authToken);
   } catch (err) {
-    logger.warn({ err }, "[twilio] module not available; running in no-op mode");
+    logger.warn({ err }, "[twilio] módulo indisponível; executando sem envio de mensagens");
     return null;
   }
 }
@@ -47,14 +47,14 @@ export async function ensureTwilioClientReadyOrExit(): Promise<void> {
         hasFlowSid: Boolean(flowSid),
         hasWaNumber: Boolean(twilioWhatsAppNumber),
       },
-      "[twilio] missing configuration; message sending disabled",
+      "[twilio] configuração incompleta; envio de mensagens desativado",
     );
     return;
   }
 
   const client = await getTwilioClient();
   if (!client) {
-    logger.warn("[twilio] unable to create client; message sending disabled");
+    logger.warn("[twilio] não foi possível criar o cliente; envio de mensagens desativado");
   }
 }
 
@@ -76,12 +76,12 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
             from: `whatsapp:+${twilioWhatsAppNumber}`,
             parameters: { reason, member_phone: `+${phoneNumber}` },
           });
-          logger.info({ sid: execution?.sid, phoneNumber, reason }, "[twilio] flow triggered");
+          logger.info({ sid: execution?.sid, phoneNumber, reason }, "[twilio] fluxo disparado");
         } catch (err) {
-          logger.warn({ err }, "[twilio] failed to trigger flow; proceeding with logged communication only");
+          logger.warn({ err }, "[twilio] falha ao disparar fluxo; seguindo apenas com comunicação registrada");
         }
       } else {
-        logger.info({ phoneNumber, reason }, "[twilio] skipped sending (no client configured)");
+        logger.info({ phoneNumber, reason }, "[twilio] envio ignorado (cliente não configurado)");
       }
     };
 
@@ -95,14 +95,14 @@ export async function triggerTwilioOrRemove(phoneNumber: string, reason: string)
     const timeElapsed = now.getTime() - lastCommTime.getTime();
 
     if (timeElapsed >= waitingPeriod) {
-      logger.info({ phoneNumber, reason }, "Waiting period ended; should remove");
+      logger.info({ phoneNumber, reason }, "Período de espera encerrado; deve remover");
       return true; // safe to remove
     }
 
-    logger.info({ phoneNumber, reason }, "Waiting period not yet expired; skipping removal");
+    logger.info({ phoneNumber, reason }, "Período de espera ainda não expirou; pulando remoção");
     return false;
   } catch (error) {
-    logger.error({ err: error }, "Error in triggerTwilioOrRemove; defaulting to keep member");
+    logger.error({ err: error }, "Erro em triggerTwilioOrRemove; mantendo membro por padrão");
     return false;
   }
 }

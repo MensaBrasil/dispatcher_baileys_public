@@ -319,11 +319,11 @@ async function main(): Promise<void> {
       const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut;
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] sessão encerrada: apague a pasta local auth e autentique novamente.");
+        logger.fatal({ code }, "[wa] sessão encerrada: apague a pasta local de autenticação e autentique novamente.");
         await safeClosePool();
         process.exit(1);
       }
-      logger.warn({ code }, "[wa] conexão fechada antes de concluir a tool");
+      logger.warn({ code }, "[wa] conexão fechada antes de concluir a ferramenta");
     }
   });
 }

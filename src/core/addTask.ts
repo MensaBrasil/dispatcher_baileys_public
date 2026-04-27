@@ -88,7 +88,7 @@ export async function addMembersToGroups(
         registrationIds.add(request.registration_id);
       }
     } catch (error: unknown) {
-      logger.error({ err: error, groupId, groupName }, `Error adding members to group ${groupName}`);
+      logger.error({ err: error, groupId, groupName }, `Erro ao adicionar membros ao grupo ${groupName}`);
     }
   }
 
@@ -107,7 +107,7 @@ export async function addMembersToGroups(
           uniqueIgnoredRegistrations.add(request.registration_id);
           logger.info(
             { registration_id: request.registration_id, groupId, groupName },
-            "Registration is listed in IGNORED_ADD_REGISTRATION_IDS; skipping enqueue",
+            "Matrícula listada em IGNORED_ADD_REGISTRATION_IDS; pulando enfileiramento",
           );
           continue;
         }
@@ -117,7 +117,7 @@ export async function addMembersToGroups(
           uniqueSuspendedRegistrations.add(request.registration_id);
           logger.info(
             { registration_id: request.registration_id, groupId, groupName },
-            "Registration is suspended and blocked from addition; skipping request",
+            "Matrícula suspensa e bloqueada para adição; pulando solicitação",
           );
           continue;
         }
@@ -126,7 +126,7 @@ export async function addMembersToGroups(
         if (!flags || !groupType) {
           logger.warn(
             { registration_id: request.registration_id, groupId, groupName },
-            "Registration or managed group type not found when validating add; skipping add",
+            "Matrícula ou tipo de grupo gerenciado não encontrado ao validar adição; pulando adição",
           );
           continue;
         }
@@ -148,7 +148,7 @@ export async function addMembersToGroups(
         ) {
           logger.info(
             { registration_id: request.registration_id, groupId, groupName, groupType },
-            "Registration is not eligible for managed group type; skipping add",
+            "Matrícula não elegível para o tipo de grupo gerenciado; pulando adição",
           );
           continue;
         }
@@ -170,7 +170,7 @@ export async function addMembersToGroups(
         if (!hasEligibleManagedPhone) {
           logger.info(
             { registration_id: request.registration_id, groupId, groupName, groupType },
-            "Registration has no authorized, non-suspended managed phone for this group type; skipping add",
+            "Matrícula sem telefone gerenciado autorizado e não suspenso para este tipo de grupo; pulando adição",
           );
           continue;
         }
@@ -188,7 +188,7 @@ export async function addMembersToGroups(
       } catch (error: unknown) {
         logger.error(
           { err: error, registration_id: request.registration_id, groupId },
-          `Error preparing add request for group ${groupId}`,
+          `Erro ao preparar solicitação de adição para o grupo ${groupId}`,
         );
       }
     }
@@ -197,9 +197,9 @@ export async function addMembersToGroups(
   await clearQueue("addQueue");
   const result = await sendToQueue(queueItems, "addQueue");
   if (result) {
-    logger.info({ count: queueItems.length }, "Added addition requests to queue");
+    logger.info({ count: queueItems.length }, "Solicitações de adição adicionadas à fila");
   } else {
-    logger.error("Error adding requests to queue");
+    logger.error("Erro ao adicionar solicitações à fila");
   }
 
   await disconnectRedis();

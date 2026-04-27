@@ -9,7 +9,7 @@ import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/
 import logger from "../utils/logger.js";
 import { checkPhoneNumber } from "../utils/phoneCheck.js";
 import { triggerTwilioOrRemove } from "../utils/twilio.js";
-import { evaluatePhoneForGroup } from "../utils/whatsappEligibility.js";
+import { COMMUNICATION_REASONS, evaluatePhoneForGroup, REMOVAL_REASONS } from "../utils/whatsappEligibility.js";
 
 configDotenv({ path: ".env" });
 
@@ -151,11 +151,11 @@ export async function removeMembersFromGroups(
               registration_id: registrationId,
               groupId,
               phone: member,
-              reason: "Suspended by WhatsApp suspension policy (whatsapp_suspended_numbers).",
+              reason: REMOVAL_REASONS.suspensoWhatsapp,
             },
             { priority: "high" },
           );
-          registerRemovalReason(member, "Suspended by WhatsApp suspension policy (whatsapp_suspended_numbers).");
+          registerRemovalReason(member, REMOVAL_REASONS.suspensoWhatsapp);
           uniquePhones.add(member);
           continue;
         }
@@ -173,7 +173,7 @@ export async function removeMembersFromGroups(
             await resolveCommunications(member);
             resolvedCommsPhones.add(member);
           } catch (err) {
-            logger.warn({ err, phone: member }, "Failed to resolve whatsapp communications for active eligible member");
+            logger.warn({ err, phone: member }, "Falha ao resolver comunicações de WhatsApp de membro ativo elegível");
           }
         }
 
@@ -182,7 +182,9 @@ export async function removeMembersFromGroups(
         }
 
         if (evaluation.waitForGracePeriod) {
-          const reasonKey = checkResult.found ? "eligibility_inactive" : "eligibility_not_found";
+          const reasonKey = checkResult.found
+            ? COMMUNICATION_REASONS.membroInativo
+            : COMMUNICATION_REASONS.membroNaoEncontradoNoBanco;
           const shouldRemove = await shouldRemoveAfterTwilio(member, reasonKey);
           if (!shouldRemove) {
             continue;
@@ -194,9 +196,9 @@ export async function removeMembersFromGroups(
           registration_id: registrationId,
           groupId,
           phone: member,
-          reason: evaluation.removalReason ?? "Not eligible for managed group",
+          reason: evaluation.removalReason ?? REMOVAL_REASONS.inelegivelGrupoGerenciado,
         });
-        registerRemovalReason(member, evaluation.removalReason ?? "Not eligible for managed group");
+        registerRemovalReason(member, evaluation.removalReason ?? REMOVAL_REASONS.inelegivelGrupoGerenciado);
 
         uniquePhones.add(member);
 
@@ -206,7 +208,10 @@ export async function removeMembersFromGroups(
           continue;
         }
 
-        if (evaluation.removalReason?.startsWith("Inactive ")) {
+        if (
+          evaluation.removalReason === REMOVAL_REASONS.membroInativoMb ||
+          evaluation.removalReason === REMOVAL_REASONS.membroInativoRjb
+        ) {
           totalInactiveCount += 1;
           uniqueInactive.add(member);
           continue;
@@ -224,7 +229,7 @@ export async function removeMembersFromGroups(
         }
       }
     } catch (error) {
-      logger.error({ err: error }, `Error processing group ${group.name ?? group.subject ?? group.id}`);
+      logger.error({ err: error }, `Erro ao processar grupo ${group.name ?? group.subject ?? group.id}`);
     }
   }
 
@@ -232,13 +237,13 @@ export async function removeMembersFromGroups(
 
   const queueCleared = await clearQueue("removeQueue");
   if (!queueCleared) {
-    logger.error({ queue: "removeQueue" }, "Failed to clear removal queue before enqueuing new items");
+    logger.error({ queue: "removeQueue" }, "Falha ao limpar fila de remoção antes de enfileirar novos itens");
     await disconnectRedis();
-    throw new Error("Failed to clear removeQueue");
+    throw new Error("Falha ao limpar removeQueue");
   }
 
   if (queueItems.length === 0) {
-    logger.info("No removal requests generated for this cycle");
+    logger.info("Nenhuma solicitação de remoção gerada neste ciclo");
     await disconnectRedis();
     return {
       totalRemoveQueueCount: 0,
@@ -265,9 +270,9 @@ export async function removeMembersFromGroups(
 
   const result = await sendToQueue(queueItems, "removeQueue");
   if (result) {
-    logger.info({ count: queueItems.length }, "Added removal requests to queue");
+    logger.info({ count: queueItems.length }, "Solicitações de remoção adicionadas à fila");
   } else {
-    logger.error("Error adding remove requests to queue");
+    logger.error("Erro ao adicionar solicitações de remoção à fila");
   }
   await disconnectRedis();
   return {

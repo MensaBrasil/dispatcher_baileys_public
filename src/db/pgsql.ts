@@ -50,7 +50,7 @@ function getPool(): Pool {
     pool = new Pool({ host, port, user, password, database, max: 10, idleTimeoutMillis: 30_000 });
 
     pool.on("error", (err) => {
-      logger.error({ err }, "[pg] unexpected pool error");
+      logger.error({ err }, "[pg] erro inesperado no pool");
     });
   }
   return pool;
@@ -86,23 +86,25 @@ async function hasTablePrivilege(schemaName: string, tableName: string, privileg
 }
 
 export async function runPostgresPreflight(): Promise<void> {
-  logger.info({ service: "postgres" }, "[preflight] starting postgres checks");
+  logger.info({ service: "postgres" }, "[preflight] iniciando verificações do Postgres");
 
   const p = getPool();
 
   try {
     await p.query("SELECT 1");
   } catch (err) {
-    logger.error({ err, service: "postgres" }, "[preflight] postgres connectivity check failed");
-    throw new Error("Startup pre-flight failed: Postgres connectivity check failed.", { cause: err });
+    logger.error({ err, service: "postgres" }, "[preflight] falha na verificação de conectividade do Postgres");
+    throw new Error("Pré-verificação de inicialização falhou: falha na conectividade com Postgres.", { cause: err });
   }
 
   let schemaName: string;
   try {
     schemaName = await getCurrentSchemaName();
   } catch (err) {
-    logger.error({ err, service: "postgres" }, "[preflight] failed to resolve current schema");
-    throw new Error("Startup pre-flight failed: Could not determine Postgres schema.", { cause: err });
+    logger.error({ err, service: "postgres" }, "[preflight] falha ao resolver schema atual");
+    throw new Error("Pré-verificação de inicialização falhou: não foi possível determinar o schema do Postgres.", {
+      cause: err,
+    });
   }
 
   const failures: PreflightFailure[] = [];
@@ -114,7 +116,7 @@ export async function runPostgresPreflight(): Promise<void> {
         failures.push({
           service: "postgres",
           table: spec.tableName,
-          message: `Table "${spec.tableName}" not found in schema "${schemaName}".`,
+          message: `Tabela "${spec.tableName}" não encontrada no schema "${schemaName}".`,
         });
         continue;
       }
@@ -130,18 +132,18 @@ export async function runPostgresPreflight(): Promise<void> {
           service: "postgres",
           table: spec.tableName,
           missingPrivileges,
-          message: `Missing privileges on "${schemaName}.${spec.tableName}": ${missingPrivileges.join(", ")}.`,
+          message: `Privilégios ausentes em "${schemaName}.${spec.tableName}": ${missingPrivileges.join(", ")}.`,
         });
       }
     } catch (err) {
       failures.push({
         service: "postgres",
         table: spec.tableName,
-        message: `Failed to validate "${schemaName}.${spec.tableName}".`,
+        message: `Falha ao validar "${schemaName}.${spec.tableName}".`,
       });
       logger.error(
         { err, service: "postgres", table: spec.tableName },
-        "[preflight] postgres table validation errored",
+        "[preflight] erro na validação de tabela do Postgres",
       );
     }
   }
@@ -149,14 +151,14 @@ export async function runPostgresPreflight(): Promise<void> {
   if (failures.length > 0) {
     logger.error(
       { service: "postgres", schemaName, failures },
-      "[preflight] postgres schema and privilege validation failed",
+      "[preflight] falha na validação de schema e privilégios do Postgres",
     );
-    throw new Error("Startup pre-flight failed: Postgres schema and privilege validation failed.");
+    throw new Error("Pré-verificação de inicialização falhou: validação de schema e privilégios do Postgres falhou.");
   }
 
   logger.info(
     { service: "postgres", schemaName, tablesChecked: POSTGRES_PREFLIGHT_TABLE_SPECS.length },
-    "[preflight] postgres checks passed",
+    "[preflight] verificações do Postgres concluídas com sucesso",
   );
 }
 

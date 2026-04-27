@@ -52,7 +52,7 @@ async function main(): Promise<void> {
       if (qr !== lastQR) {
         lastQR = qr;
         qrcode.generate(qr, { small: true });
-        logger.info("Scan the QR code in WhatsApp > Connected devices");
+        logger.info("Escaneie o QR code no WhatsApp > Dispositivos conectados");
       }
     }
 
@@ -150,10 +150,10 @@ async function main(): Promise<void> {
         };
         const summaryPath = path.join(outDir, `groups_summary_${ts}.json`);
         await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
-        logger.info({ outPath, summaryPath }, "Groups metadata and summary saved");
+        logger.info({ outPath, summaryPath }, "Metadados e resumo dos grupos salvos");
         setTimeout(() => process.exit(0), 50);
       } catch (err) {
-        logger.error({ err }, "Failed to fetch or save groups");
+        logger.error({ err }, "Falha ao buscar ou salvar grupos");
         process.exit(1);
       }
     }
@@ -164,16 +164,16 @@ async function main(): Promise<void> {
       if (isLoggedOut) {
         logger.fatal(
           { code },
-          "[wa] connection closed: Session logged out. Delete the local auth folder and link again.",
+          "[wa] conexão fechada: sessão encerrada. Apague a pasta local de autenticação e conecte novamente.",
         );
         process.exit(1);
       }
-      logger.warn({ code }, "[wa] connection closed before dumping groups");
+      logger.warn({ code }, "[wa] conexão fechada antes de exportar grupos");
     }
   });
 }
 
 main().catch((err) => {
-  logger.error({ err }, "Unhandled error in tools/dumpGroups");
+  logger.error({ err }, "Erro não tratado em tools/dumpGroups");
   process.exit(1);
 });
