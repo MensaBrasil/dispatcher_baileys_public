@@ -240,6 +240,7 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       SELECT
         r.registration_id,
         DATE_PART('year', AGE(r.birth_date))::int AS member_age_years,
+        r.gender AS member_gender,
         CASE
           WHEN med.max_expiration_date >= $1::date
             AND COALESCE(r.transferred, FALSE) = FALSE
@@ -264,6 +265,7 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
         END AS status,
         'member'::text AS phone_role,
         rs.member_age_years,
+        rs.member_gender,
         (
           SELECT COUNT(*)::int
           FROM phones mp
@@ -290,6 +292,7 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
         END AS status,
         'legal_rep'::text AS phone_role,
         rs.member_age_years,
+        rs.member_gender,
         (
           SELECT COUNT(*)::int
           FROM legal_representatives mlr
@@ -313,13 +316,14 @@ export async function getPhoneNumbersWithStatus(): Promise<PhoneNumberStatusRow[
       status,
       phone_role,
       member_age_years,
+      member_gender,
       managed_phone_count,
       BOOL_OR(is_legal_representative) AS is_legal_representative,
       BOOL_OR(is_managed_mb_eligible) AS is_managed_mb_eligible,
       BOOL_OR(is_managed_rjb_eligible) AS is_managed_rjb_eligible
     FROM PhoneNumbers
     WHERE phone_number IS NOT NULL
-    GROUP BY phone_number, registration_id, status, phone_role, member_age_years, managed_phone_count
+    GROUP BY phone_number, registration_id, status, phone_role, member_age_years, member_gender, managed_phone_count
     ORDER BY status, phone_number;
   `;
   const { rows } = await p.query<PhoneNumberStatusRow>(query, [currentDate]);
@@ -373,6 +377,7 @@ export async function getRegistrationPhoneLookupRows(): Promise<RegistrationPhon
 
 export type RegistrationFlags = {
   registration_id: number;
+  gender: string | null;
   is_active: boolean;
   is_adult: boolean;
   is_minor: boolean;
@@ -388,6 +393,7 @@ export async function getRegistrationFlags(registrationIds: number[]): Promise<M
   const query = `
     SELECT
       r.registration_id,
+      r.gender,
       CASE
         WHEN med.max_expiration_date >= CURRENT_DATE
           AND COALESCE(r.transferred, FALSE) = FALSE

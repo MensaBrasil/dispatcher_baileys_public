@@ -9,7 +9,7 @@ import {
 import { clearQueue, disconnect as disconnectRedis, sendToQueue } from "../db/redis.js";
 import type { GroupType } from "../types/DBTypes.js";
 import type { AddPolicy } from "../types/PolicyTypes.js";
-import { checkGroupType } from "../utils/checkGroupType.js";
+import { checkGroupType, isMBWomenGroup } from "../utils/checkGroupType.js";
 import logger from "../utils/logger.js";
 import {
   buildAuthorizationLookup,
@@ -138,12 +138,14 @@ export async function addMembersToGroups(
               isActive: flags.is_active,
               isAdult: flags.is_adult,
               isMinor: flags.is_minor,
+              isFemale: flags.gender === "Feminino",
               hasMemberPhone: flags.has_member_phone,
               hasLegalRepPhone: flags.has_legal_rep_phone,
               memberPhoneCount: flags.member_phone_count,
               legalRepPhoneCount: flags.legal_rep_phone_count,
             },
             groupType,
+            { requireFemaleMember: isMBWomenGroup(groupName) },
           )
         ) {
           logger.info(

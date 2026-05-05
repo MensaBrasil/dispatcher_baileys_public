@@ -4,9 +4,28 @@ function normalizeGroupName(name: string | undefined | null): string {
   return String(name ?? "").trim();
 }
 
+const explicitMBGroupNames = new Set([
+  "Mensampa Regional",
+  "Mensa Ribeirão Preto, São Carlos, Araraquara e redondezas",
+  "Mensa São José dos Campos e região",
+]);
+
+const explicitRJBGroupNames = new Set([
+  "Avisos Mensa JB C.O/N",
+  "Avisos Mensa JB Nordeste",
+  "Avisos Mensa JB SP CIDADE",
+  "Avisos Mensa JB SP ESTADO",
+  "Avisos Mensa JB SUDESTE",
+]);
+
+export function isMBWomenGroup(name: string | undefined | null): boolean {
+  return normalizeGroupName(name) === "MB | Mulheres";
+}
+
 export function isMBGroup(name: string | undefined | null): boolean {
   const normalized = normalizeGroupName(name);
   return (
+    explicitMBGroupNames.has(normalized) ||
     /^Mensa\s+\S.*\s+Regional$/i.test(normalized) ||
     /^Avisos Mensa\b/i.test(normalized) ||
     /^MB\s*\|\s*\S/i.test(normalized)
@@ -15,7 +34,7 @@ export function isMBGroup(name: string | undefined | null): boolean {
 
 export function isRJBGroup(name: string | undefined | null): boolean {
   const normalized = normalizeGroupName(name);
-  return /^R\.\s?JB\s*\|\s*\S/i.test(normalized);
+  return explicitRJBGroupNames.has(normalized) || /^R\.\s?JB\s*\|\s*\S/i.test(normalized);
 }
 
 export function isManagedGroup(name: string | undefined | null): boolean {

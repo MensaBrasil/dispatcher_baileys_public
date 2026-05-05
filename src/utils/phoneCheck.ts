@@ -54,6 +54,7 @@ export function checkPhoneNumber(
   let hasLegalRepForMinor = false;
   let hasLegalRepForAdult = false;
   let hasActiveMB = false;
+  let hasActiveMBFemale = false;
   let hasActiveRJB = false;
   let hasInactiveMB = false;
   let hasInactiveRJB = false;
@@ -77,6 +78,9 @@ export function checkPhoneNumber(
 
     if (entry.status === "Active" && entry.is_managed_mb_eligible) {
       hasActiveMB = true;
+      if (entry.member_gender === "Feminino") {
+        hasActiveMBFemale = true;
+      }
     }
     if (entry.status === "Active" && entry.is_managed_rjb_eligible && entry.managed_phone_count >= 1) {
       hasActiveRJB = true;
@@ -105,6 +109,7 @@ export function checkPhoneNumber(
     has_legal_rep_for_adult: hasLegalRepForAdult,
     is_legal_representative: hasLegalRepPhone,
     has_active_mb: hasActiveMB,
+    has_active_mb_female: hasActiveMBFemale,
     has_active_rjb: hasActiveRJB,
     has_inactive_mb: hasInactiveMB,
     has_inactive_rjb: hasInactiveRJB,

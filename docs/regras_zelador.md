@@ -17,6 +17,12 @@ A classificação MB engloba as seguintes comunidades:
 - MB | N-SIGs Mensa Brasil
 - Grupos Regionais Mensa Brasil
 
+Também são tratados como grupos **MB** os grupos com estes nomes específicos:
+
+- Mensampa Regional
+- Mensa Ribeirão Preto, São Carlos, Araraquara e redondezas
+- Mensa São José dos Campos e região
+
 **R. JB**: Grupos voltados aos responsáveis pelos Jovens Brilhantes (**mensans com 17 anos ou menos**)
 
 - R. JB | Mensinha - Resp. Por JB Menores de 13 Anos
@@ -24,6 +30,14 @@ A classificação MB engloba as seguintes comunidades:
 - R. JB | Mensa Educação
 - R. JB | SIG Responsáveis Jovens Brilhantes
 - R. JB | Grandes Eventos Mensa
+
+Também são tratados como grupos **R. JB** os grupos com estes nomes específicos:
+
+- Avisos Mensa JB C.O/N
+- Avisos Mensa JB Nordeste
+- Avisos Mensa JB SP CIDADE
+- Avisos Mensa JB SP ESTADO
+- Avisos Mensa JB SUDESTE
 
 ## 3 - Como o Zelador identifica quem ele deve remover e adicionar aos grupos de WhatsApp?
 
@@ -59,6 +73,8 @@ Para permanecer nos grupos **MB**, o membro precisar ter vinculado ao cadastro o
 O membro precisa estar com o cadastro ATIVO (anuidade paga).
 
 Cada membro pode ter apenas 1 número de celular vinculado ao cadastro e participando de um grupo.
+
+No grupo **MB | Mulheres**, além das regras acima, o membro precisa ter gênero **Feminino** no cadastro.
 
 - ### Para ser adicionado aos grupos R. JB (Responsáveis por Jovens Brilhantes)
 

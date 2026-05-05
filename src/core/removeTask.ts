@@ -3,7 +3,7 @@ import { resolveCommunications } from "../db/pgsql.js";
 import { clearQueue, disconnect as disconnectRedis, sendToQueue } from "../db/redis.js";
 import type { PhoneNumberStatusRow } from "../types/PhoneTypes.js";
 import type { RemovalPolicy } from "../types/PolicyTypes.js";
-import { checkGroupType } from "../utils/checkGroupType.js";
+import { checkGroupType, isMBWomenGroup } from "../utils/checkGroupType.js";
 import type { MinimalGroup } from "../utils/groups.js";
 import { extractPhoneFromParticipant, type ResolveLidToPhoneFn } from "../utils/jid.js";
 import logger from "../utils/logger.js";
@@ -170,7 +170,9 @@ export async function removeMembersFromGroups(
           continue;
         }
 
-        const evaluation = evaluatePhoneForGroup(checkResult, groupType);
+        const evaluation = evaluatePhoneForGroup(checkResult, groupType, {
+          requireFemaleMember: isMBWomenGroup(groupName),
+        });
 
         if (checkResult.found && !evaluation.shouldRemove && !resolvedCommsPhones.has(member)) {
           try {

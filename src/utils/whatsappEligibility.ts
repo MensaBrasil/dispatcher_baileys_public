@@ -6,6 +6,7 @@ export type RegistrationEligibility = {
   isActive: boolean;
   isAdult: boolean;
   isMinor: boolean;
+  isFemale: boolean;
   hasMemberPhone: boolean;
   hasLegalRepPhone: boolean;
   memberPhoneCount: number;
@@ -37,6 +38,7 @@ export const REMOVAL_REASONS = {
     "Telefone de membro encontrado para MB, mas a data de nascimento/idade do cadastro está ausente.",
   inelegivelMb:
     "Telefone de membro encontrado para MB, mas não cumpre simultaneamente: cadastro ativo e membro com 18 anos ou mais.",
+  generoNaoFemininoMbMulheres: 'Membro em "MB | Mulheres" deve ser adulto e do gênero Feminino.',
   membroInativoRjb: "Menor vinculado inativo para elegibilidade em grupo R. JB.",
   responsavelSemMenorRjb: "Responsável legal não está mais vinculado a menor de 17 anos ou menos para grupos R. JB.",
   apenasMembroRjb:
@@ -55,11 +57,13 @@ export const REMOVAL_REASONS = {
 export function isEligibleRegistrationForGroup(
   registration: RegistrationEligibility | undefined,
   groupType: GroupType | null,
+  options: { requireFemaleMember?: boolean } = {},
 ): boolean {
   if (!registration || !groupType) return false;
   if (!registration.isActive) return false;
 
   if (groupType === "MB") {
+    if (options.requireFemaleMember && !registration.isFemale) return false;
     return registration.isAdult && registration.hasMemberPhone;
   }
 
@@ -70,7 +74,11 @@ export function isEligibleRegistrationForGroup(
   return false;
 }
 
-export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: GroupType): GroupEligibilityResult {
+export function evaluatePhoneForGroup(
+  checkResult: PhoneCheckResult,
+  groupType: GroupType,
+  options: { requireFemaleMember?: boolean } = {},
+): GroupEligibilityResult {
   if (!checkResult.found) {
     return {
       shouldAdd: false,
@@ -81,7 +89,25 @@ export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: 
   }
 
   if (groupType === "MB") {
+    if (options.requireFemaleMember && checkResult.has_active_mb_female) {
+      return {
+        shouldAdd: true,
+        shouldRemove: false,
+        removalReason: null,
+        waitForGracePeriod: false,
+      };
+    }
+
     if (checkResult.has_active_mb) {
+      if (options.requireFemaleMember) {
+        return {
+          shouldAdd: false,
+          shouldRemove: true,
+          removalReason: REMOVAL_REASONS.generoNaoFemininoMbMulheres,
+          waitForGracePeriod: false,
+        };
+      }
+
       return {
         shouldAdd: true,
         shouldRemove: false,
