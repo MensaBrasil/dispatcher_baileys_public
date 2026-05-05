@@ -5,6 +5,7 @@ echo "1) Dump de grupos (pnpm tools:dump-groups)"
 echo "2) Dump de grupos onde o socket é admin (pnpm tools:dump-admin-groups)"
 echo "3) Adicionar worker nas comunidades (pnpm tools:add-worker)"
 echo "4) Enfileirar remoção de contato em todos os grupos (pnpm tools:queue-contact-removal)"
+echo "5) Listar grupos por regra (node dist/tools/listar_grupos.js)"
 echo "0) Sair"
 
 printf "Opção: "
@@ -61,6 +62,16 @@ case "$choice" in
     echo "Executando enfileiramento de remoções..."
     if pnpm build; then
       node dist/tools/queueContactRemoval.js --phone "$phone"
+      exit 0
+    else
+      echo "pnpm build falhou. Corrija o erro e tente novamente."
+      exit 1
+    fi
+    ;;
+  5)
+    echo "Listando grupos por regra..."
+    if pnpm build; then
+      node dist/tools/listar_grupos.js
       exit 0
     else
       echo "pnpm build falhou. Corrija o erro e tente novamente."

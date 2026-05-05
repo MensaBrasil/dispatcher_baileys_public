@@ -33,14 +33,20 @@ export const REMOVAL_REASONS = {
   apenasResponsavelMb:
     "Telefone cadastrado apenas como responsável legal, não como telefone de membro elegível para MB.",
   semTelefoneMembroMb: "Telefone não cadastrado na lista de telefones de membro exigida para grupos MB.",
-  inelegivelMb: "Telefone não atende aos critérios de elegibilidade para MB.",
-  membroInativoRjb: "Menor vinculado inativo para elegibilidade em grupo RJB.",
-  responsavelSemMenorRjb: "Responsável legal não está mais vinculado a menor de 17 anos ou menos para grupos RJB.",
+  idadeDesconhecidaMb:
+    "Telefone de membro encontrado para MB, mas a data de nascimento/idade do cadastro está ausente.",
+  inelegivelMb:
+    "Telefone de membro encontrado para MB, mas não cumpre simultaneamente: cadastro ativo e membro com 18 anos ou mais.",
+  membroInativoRjb: "Menor vinculado inativo para elegibilidade em grupo R. JB.",
+  responsavelSemMenorRjb: "Responsável legal não está mais vinculado a menor de 17 anos ou menos para grupos R. JB.",
   apenasMembroRjb:
-    "Telefone cadastrado apenas como telefone de membro, não como telefone de responsável legal exigido para RJB.",
+    "Telefone cadastrado apenas como telefone de membro, não como telefone de responsável legal exigido para R. JB.",
   semTelefoneResponsavelRjb:
-    "Telefone não cadastrado na lista de telefones de responsável legal exigida para grupos RJB.",
-  inelegivelRjb: "Telefone não atende aos critérios de elegibilidade para RJB.",
+    "Telefone não cadastrado na lista de telefones de responsável legal exigida para grupos R. JB.",
+  idadeDesconhecidaRjb:
+    "Telefone de responsável legal encontrado para R. JB, mas a data de nascimento/idade do membro vinculado está ausente.",
+  inelegivelRjb:
+    "Telefone de responsável legal encontrado para R. JB, mas não cumpre simultaneamente: membro vinculado ativo e 17 anos ou menos.",
   inelegivelGrupoGerenciado: "Telefone não elegível para grupo gerenciado.",
   suspensoWhatsapp: "Telefone suspenso pela política de WhatsApp (`whatsapp_suspended_numbers`).",
   saiuDoGrupo: "Saiu do grupo.",
@@ -54,16 +60,11 @@ export function isEligibleRegistrationForGroup(
   if (!registration.isActive) return false;
 
   if (groupType === "MB") {
-    return registration.isAdult && registration.hasMemberPhone && registration.memberPhoneCount === 1;
+    return registration.isAdult && registration.hasMemberPhone;
   }
 
   if (groupType === "RJB") {
-    return (
-      registration.isMinor &&
-      registration.hasLegalRepPhone &&
-      registration.legalRepPhoneCount >= 1 &&
-      registration.legalRepPhoneCount <= 2
-    );
+    return registration.isMinor && registration.hasLegalRepPhone && registration.legalRepPhoneCount >= 1;
   }
 
   return false;
@@ -100,7 +101,9 @@ export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: 
             ? REMOVAL_REASONS.apenasResponsavelMb
             : !checkResult.has_member_phone
               ? REMOVAL_REASONS.semTelefoneMembroMb
-              : REMOVAL_REASONS.inelegivelMb,
+              : checkResult.has_member_phone_with_unknown_age
+                ? REMOVAL_REASONS.idadeDesconhecidaMb
+                : REMOVAL_REASONS.inelegivelMb,
       waitForGracePeriod: Boolean(checkResult.has_inactive_mb),
     };
   }
@@ -126,7 +129,9 @@ export function evaluatePhoneForGroup(checkResult: PhoneCheckResult, groupType: 
             ? REMOVAL_REASONS.apenasMembroRjb
             : !checkResult.has_legal_rep_phone
               ? REMOVAL_REASONS.semTelefoneResponsavelRjb
-              : REMOVAL_REASONS.inelegivelRjb,
+              : checkResult.has_legal_rep_phone_with_unknown_age
+                ? REMOVAL_REASONS.idadeDesconhecidaRjb
+                : REMOVAL_REASONS.inelegivelRjb,
       waitForGracePeriod: Boolean(checkResult.has_inactive_rjb),
     };
   }

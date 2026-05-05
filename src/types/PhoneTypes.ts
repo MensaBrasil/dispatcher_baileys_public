@@ -27,4 +27,6 @@ export interface PhoneCheckResult {
   has_active_rjb?: boolean;
   has_inactive_mb?: boolean;
   has_inactive_rjb?: boolean;
+  has_member_phone_with_unknown_age?: boolean;
+  has_legal_rep_phone_with_unknown_age?: boolean;
 }

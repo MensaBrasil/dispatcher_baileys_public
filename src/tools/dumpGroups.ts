@@ -106,13 +106,13 @@ async function main(): Promise<void> {
           RJB: 0,
           NotMensa: 0,
         };
-        const groupsNotMensa: string[] = [];
+        const groupsOutsideNomenclature: string[] = [];
         for (const g of regularGroups) {
           const t = (await checkGroupType(g.subject)) as GT;
           if (t) typeCounts[t] = (typeCounts[t] ?? 0) + 1;
           else {
             typeCounts.NotMensa += 1;
-            groupsNotMensa.push(g.subject ?? g.id);
+            groupsOutsideNomenclature.push(g.subject ?? g.id);
           }
         }
         const groupsIAmNotAdmin = values.filter((g) => !isAdmin(g)).map((g) => g.subject ?? g.id);
@@ -143,7 +143,8 @@ async function main(): Promise<void> {
             MB: typeCounts.MB,
             RJB: typeCounts.RJB,
           },
-          "Groups not Mensa": groupsNotMensa,
+          groupsOutsideNomenclature,
+          "Groups not Mensa": groupsOutsideNomenclature,
           "Groups I am not Admin": groupsIAmNotAdmin,
           CommunityGroupsIamAdmin: communityGroupsIamAdmin,
           AnnounceGroupsIamAdmin: announceGroupsIamAdmin,

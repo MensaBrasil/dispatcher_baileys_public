@@ -52,6 +52,7 @@ type RemovalQueueItem = {
   type: "remove";
   registration_id: number | null;
   groupId: string;
+  groupName: string;
   phone: string;
   reason: string;
   communityId?: string | null;
@@ -117,13 +118,16 @@ export async function removeMembersFromGroups(
   for (const group of groups) {
     try {
       const groupId = group.id;
-      const groupName = group.subject ?? group.name ?? "";
+      const groupName = group.subject ?? group.name ?? group.id;
       const groupType = await checkGroupType(groupName);
       if (!groupType) continue;
 
       const communityId = group.announceGroup ?? null;
-      const pushRemoval = (item: Omit<RemovalQueueItem, "communityId">, options?: { priority?: "high" | "normal" }) => {
-        const queueItem = { ...item, communityId };
+      const pushRemoval = (
+        item: Omit<RemovalQueueItem, "communityId" | "groupName">,
+        options?: { priority?: "high" | "normal" },
+      ) => {
+        const queueItem = { ...item, groupName, communityId };
         if (options?.priority === "high") {
           priorityQueueItems.push(queueItem);
         } else {

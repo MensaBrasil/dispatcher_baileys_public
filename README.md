@@ -59,10 +59,10 @@ Regras/filtragem de requisições
 - `whatsapp_suspended_numbers`: qualquer `registration_id` suspenso é ignorado (logado como bloqueado) e não é enfileirado para adição, independentemente do grupo.
 - Telefones em `whatsapp_suspended_numbers` tambem bloqueiam a entrada na `addQueue`, mesmo que o cadastro em si nao esteja suspenso.
 - `IGNORED_ADD_REGISTRATION_IDS`: qualquer `registration_id` listado nessa env é ignorado e não é enfileirado para adição.
-- Só grupos `MB` e `RJB` entram no fluxo gerenciado.
+- Só grupos `MB` e `R. JB` entram no fluxo gerenciado.
 - Cadastro ativo para add considera pagamento vigente e tambem exclui `transferred`, `deceased`, `expelled` e `suspended_until` ainda vigente.
-- `MB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de adulto (`>= 18`) e houver exatamente um telefone do membro (`phones`) autorizado para algum worker e nao suspenso.
-- `RJB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de menor (`<= 17`) e houver de 1 a 2 telefones principais de responsáveis legais (`legal_representatives.phone`) autorizados para algum worker e nao suspensos.
+- `MB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de adulto (`>= 18`) e houver pelo menos um telefone do membro (`phones`) autorizado para algum worker e nao suspenso.
+- `R. JB`: a requisição só entra na `addQueue` se o cadastro estiver ativo, for de menor (`<= 17`) e houver pelo menos um telefone principal de responsável legal (`legal_representatives.phone`) autorizado para algum worker e nao suspenso.
 
 Erros e logs
 
@@ -92,30 +92,28 @@ O que faz
 
 - Percorre membros de cada grupo (a partir de `participants` do Baileys, já fornecidos pelo orquestrador) e cruza com o mapa de telefones/estado do DB (`phoneNumbersFromDB`).
 - Aplica regras por tipo de grupo e estado do membro para decidir remoção:
-  - Regras por faixa etária JB vs não-JB, menores de 13 e autorização gov.br (via `isRegularJBGroup`, `isNonJBGroup`).
-  - Grupo “MB | Mulheres”: remove números com `gender = Masculino`.
-  - Grupo “R.JB | Familiares de JB 12+”: exige responsável legal que represente JB 13+.
+  - `MB`: permanece telefone de membro adulto ativo cadastrado em `phones`.
+  - `R. JB`: permanece telefone de responsável legal vinculado a membro menor ativo.
   - `status = Inactive`: antes de remover, chama `triggerTwilioOrRemove(phone, "mensa_inactive")` para respeitar período de espera/comunicação.
   - Números não encontrados no DB: idem acima, com razão `"mensa_not_found"`.
   - Ignora números protegidos por `whatsapp_invited_numbers`.
   - Remove números suspensos por `whatsapp_suspended_numbers`.
 - Para cada decisão de remoção, enfileira item no Redis `removeQueue` com:
-  - `type: "remove"`, `registration_id` (ou `null`), `groupId`, `phone`, `reason`, `communityId` (quando disponível).
+  - `type: "remove"`, `registration_id` (ou `null`), `groupId`, `groupName`, `phone`, `reason`, `communityId` (quando disponível).
 - Limpa `removeQueue` antes de inserir e desconecta do Redis ao final.
 
 Campos/formatos
 
 - `MinimalGroup`: `{ id, subject?, name?, participants, announceGroup? }` (fornecido pelo orquestrador a partir do Baileys).
-- `PhoneNumberStatusRow`: inclui `status (Active|Inactive)`, `jb_under_13`, `jb_13_to_17`, `is_adult`, `is_legal_representative`, `has_accepted_terms`, `gender`, etc.
+- `PhoneNumberStatusRow`: inclui `status (Active|Inactive)`, `phone_role`, `member_age_years`, flags de elegibilidade gerenciada para `MB`/`R. JB` e flags auxiliares de responsável legal.
 
 Regras em detalhes
 
-- JB vs Não-JB:
-  - Menores de 13 são removidos de qualquer grupo.
-  - JB 13-17 são removidos de grupos não-JB.
-  - Em grupos JB, adultos só permanecem se forem responsáveis cadastrados.
-  - JB 13-17 sem aceite gov.br são removidos de grupos JB.
-  - Grupos AJB não aplicam as regras de idade acima (exceto menores de 13).
+- Grupos gerenciados:
+  - `MB`: membros adultos ativos permanecem quando o telefone está em `phones`.
+  - `R. JB`: responsáveis permanecem quando o telefone está em `legal_representatives.phone`, vinculado a membro de 17 anos ou menos ativo.
+  - Telefones de membro menor em `MB` são removidos.
+  - Telefones de membro em `R. JB` são removidos quando não também constam como responsável legal.
   - Twilio/espera: `triggerTwilioOrRemove` registra comunicação e pode acionar flow do Twilio Studio. Retorna `true` apenas quando o período de 48 horas terminou, indicando que remoção é segura.
 
 Observações/consistência
@@ -139,7 +137,7 @@ O que faz
     - Se não encontrar, loga aviso informativo (sem inserir no DB).
   - Concilia requisições de adição: lê todos os requests ainda `fulfilled = false` do grupo, sem depender de `last_attempt` ou `no_of_attempts`, e usando os 8 últimos dígitos apenas dos telefones válidos para o tipo do grupo, confere se a entrada já se concretizou; se sim, marca `registerWhatsappAddFulfilled(request_id)`.
     - `MB`: somente telefones de `phones`.
-    - `RJB`: somente telefones principais de `legal_representatives.phone`.
+    - `R. JB`: somente telefones principais de `legal_representatives.phone`.
 
 Entradas/saídas e formatos
 
@@ -208,7 +206,7 @@ Observações
     - Abre sessão Baileys (QR no terminal, se necessário) e busca grupos visíveis pela sessão.
     - Encontra todos os grupos (regulares, comunidades e announce) em que o telefone informado está presente.
     - Enfileira um item por grupo em `removeQueue` com:
-      - `type: "remove"`, `registration_id: null`, `groupId`, `phone`, `reason`, `communityId`.
+      - `type: "remove"`, `registration_id: null`, `groupId`, `groupName`, `phone`, `reason`, `communityId`.
   - Observações:
     - Reutiliza a sessão salva localmente em `auth/` e mostra QR apenas se for preciso autenticar de novo.
     - Esta tool limpa a `removeQueue` antes de enfileirar as novas remoções.

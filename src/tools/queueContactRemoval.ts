@@ -24,6 +24,7 @@ type RemovalQueueItem = {
   type: "remove";
   registration_id: number | null;
   groupId: string;
+  groupName: string;
   phone: string;
   reason: string;
   communityId?: string | null;
@@ -93,6 +94,7 @@ async function findGroupsForPhone(
       type: "remove",
       registration_id: null,
       groupId: group.id,
+      groupName: group.subject ?? group.name ?? group.id,
       phone: matchedPhone ?? fallbackPhone,
       reason: "Solicitação manual de remoção pela ferramenta.",
       communityId: group.announceGroup ?? null,
@@ -197,7 +199,12 @@ async function main(): Promise<void> {
 
         for (const item of queueItems) {
           logger.info(
-            { groupId: item.groupId, communityId: item.communityId ?? null, phone: item.phone },
+            {
+              groupId: item.groupId,
+              groupName: item.groupName,
+              communityId: item.communityId ?? null,
+              phone: item.phone,
+            },
             "Remoção enfileirada",
           );
         }

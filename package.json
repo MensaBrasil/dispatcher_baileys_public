@@ -7,19 +7,7 @@
   "scripts": {
     "start": "pnpm build && node --max-old-space-size=4096 dist/index.js",
     "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -b",
-    "check": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
-    "run-prod": "node --max-old-space-size=4096 dist/index.js",
-    "format": "pnpm biome format --write && pnpm biome lint --write && pnpm biome check --write && git add .",
-    "lint": "biome lint",
-    "lint:fix": "biome lint --write",
-    "fmt": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
-    "fmt:write": "biome format --write .",
-    "get-queues": "node dist/tools/getRedisQueue.js",
-    "tools:dump-groups": "pnpm build && node dist/tools/dumpGroups.js",
-    "tools:dump-admin-groups": "pnpm build && node dist/tools/dumpAdminGroups.js",
-    "tools:add-worker": "pnpm build && node dist/tools/addNewWorker.js",
-    "tools:queue-contact-removal": "pnpm build && node dist/tools/queueContactRemoval.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "format": "pnpm biome format --write && pnpm biome lint --write && pnpm biome check --write && git add ."
   },
   "keywords": [],
   "license": "ISC",
@@ -38,7 +26,7 @@
     "twilio": "^6.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.13",
+    "@biomejs/biome": "2.4.14",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
     "@types/qrcode-terminal": "^0.12.2",

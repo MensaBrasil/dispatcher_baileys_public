@@ -57,29 +57,32 @@ export function checkPhoneNumber(
   let hasActiveRJB = false;
   let hasInactiveMB = false;
   let hasInactiveRJB = false;
+  let hasMemberPhoneWithUnknownAge = false;
+  let hasLegalRepPhoneWithUnknownAge = false;
 
   for (const entry of matchedEntries) {
+    const age =
+      typeof entry.member_age_years === "number" && Number.isFinite(entry.member_age_years)
+        ? entry.member_age_years
+        : null;
+
     if (entry.phone_role === "member") hasMemberPhone = true;
     if (entry.phone_role === "legal_rep") hasLegalRepPhone = true;
-    if (entry.phone_role === "member" && entry.member_age_years >= 18) hasMemberAdultPhone = true;
-    if (entry.phone_role === "member" && entry.member_age_years <= 17) hasMemberMinorPhone = true;
-    if (entry.phone_role === "legal_rep" && entry.member_age_years <= 17) hasLegalRepForMinor = true;
-    if (entry.phone_role === "legal_rep" && entry.member_age_years >= 18) hasLegalRepForAdult = true;
+    if (entry.phone_role === "member" && age === null) hasMemberPhoneWithUnknownAge = true;
+    if (entry.phone_role === "legal_rep" && age === null) hasLegalRepPhoneWithUnknownAge = true;
+    if (entry.phone_role === "member" && age !== null && age >= 18) hasMemberAdultPhone = true;
+    if (entry.phone_role === "member" && age !== null && age <= 17) hasMemberMinorPhone = true;
+    if (entry.phone_role === "legal_rep" && age !== null && age <= 17) hasLegalRepForMinor = true;
+    if (entry.phone_role === "legal_rep" && age !== null && age >= 18) hasLegalRepForAdult = true;
 
-    if (entry.status === "Active" && entry.is_managed_mb_eligible && entry.managed_phone_count === 1) {
+    if (entry.status === "Active" && entry.is_managed_mb_eligible) {
       hasActiveMB = true;
     }
-    if (
-      entry.status === "Active" &&
-      entry.is_managed_rjb_eligible &&
-      entry.managed_phone_count >= 1 &&
-      entry.managed_phone_count <= 2
-    ) {
+    if (entry.status === "Active" && entry.is_managed_rjb_eligible && entry.managed_phone_count >= 1) {
       hasActiveRJB = true;
     }
-    if (entry.status === "Inactive" && entry.phone_role === "member" && entry.member_age_years >= 18)
-      hasInactiveMB = true;
-    if (entry.status === "Inactive" && entry.phone_role === "legal_rep" && entry.member_age_years <= 17) {
+    if (entry.status === "Inactive" && entry.phone_role === "member" && age !== null && age >= 18) hasInactiveMB = true;
+    if (entry.status === "Inactive" && entry.phone_role === "legal_rep" && age !== null && age <= 17) {
       hasInactiveRJB = true;
     }
   }
@@ -105,5 +108,7 @@ export function checkPhoneNumber(
     has_active_rjb: hasActiveRJB,
     has_inactive_mb: hasInactiveMB,
     has_inactive_rjb: hasInactiveRJB,
+    has_member_phone_with_unknown_age: hasMemberPhoneWithUnknownAge,
+    has_legal_rep_phone_with_unknown_age: hasLegalRepPhoneWithUnknownAge,
   };
 }

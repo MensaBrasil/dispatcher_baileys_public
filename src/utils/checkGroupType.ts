@@ -7,13 +7,15 @@ function normalizeGroupName(name: string | undefined | null): string {
 export function isMBGroup(name: string | undefined | null): boolean {
   const normalized = normalizeGroupName(name);
   return (
-    /^Mensa\b.*\bRegional\b/i.test(normalized) || /^Avisos Mensa\b/i.test(normalized) || /^MB\s*\|/i.test(normalized)
+    /^Mensa\s+\S.*\s+Regional$/i.test(normalized) ||
+    /^Avisos Mensa\b/i.test(normalized) ||
+    /^MB\s*\|\s*\S/i.test(normalized)
   );
 }
 
 export function isRJBGroup(name: string | undefined | null): boolean {
   const normalized = normalizeGroupName(name);
-  return /^R\.\s?JB\s*\|/i.test(normalized);
+  return /^R\.\s?JB\s*\|\s*\S/i.test(normalized);
 }
 
 export function isManagedGroup(name: string | undefined | null): boolean {

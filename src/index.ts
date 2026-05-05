@@ -22,6 +22,23 @@ import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList 
 
 configDotenv({ path: ".env" });
 
+type GroupNomenclatureSummaryEntry = {
+  id: string;
+  name: string;
+};
+
+function getGroupName(group: { id: string; subject?: string; name?: string }): string {
+  return group.subject ?? group.name ?? group.id;
+}
+
+function appendGroupOutsideNomenclature(
+  groupsOutsideNomenclature: GroupNomenclatureSummaryEntry[],
+  group: { id: string; subject?: string; name?: string },
+): void {
+  if (groupsOutsideNomenclature.some((entry) => entry.id === group.id)) return;
+  groupsOutsideNomenclature.push({ id: group.id, name: getGroupName(group) });
+}
+
 async function main() {
   // CLI options
   const program = new Command();
@@ -143,9 +160,14 @@ async function main() {
       const { groups, adminGroups, community, communityAnnounce, adminCommunity, adminCommunityAnnounce } =
         await processGroupsBaileys(sock);
       const managedAdminGroups = [];
+      const groupsOutsideNomenclatureForAdd: GroupNomenclatureSummaryEntry[] = [];
       for (const group of adminGroups) {
-        const groupType = await checkGroupType(group.subject ?? group.name ?? "");
-        if (groupType) managedAdminGroups.push(group);
+        const groupType = await checkGroupType(getGroupName(group));
+        if (groupType) {
+          managedAdminGroups.push(group);
+        } else {
+          appendGroupOutsideNomenclature(groupsOutsideNomenclatureForAdd, group);
+        }
       }
       const removalAdminGroups = adminGroups;
       const removalCommunityGroups = adminCommunity;
@@ -153,9 +175,19 @@ async function main() {
       const removalGroups = communityMode
         ? [...removalCommunityGroups, ...removalCommunityAnnounceGroups]
         : [...removalAdminGroups, ...removalCommunityGroups, ...removalCommunityAnnounceGroups];
+      const managedRemovalGroups: typeof removalGroups = [];
+      const groupsOutsideNomenclatureForRemoval: GroupNomenclatureSummaryEntry[] = [];
+      for (const group of removalGroups) {
+        const groupType = await checkGroupType(getGroupName(group));
+        if (!groupType) {
+          appendGroupOutsideNomenclature(groupsOutsideNomenclatureForRemoval, group);
+          continue;
+        }
+        managedRemovalGroups.push(group);
+      }
       // Update DB with current managed groups list.
       try {
-        const toSave = managedAdminGroups.map((g) => ({ group_id: g.id, group_name: g.subject ?? g.name ?? g.id }));
+        const toSave = managedAdminGroups.map((g) => ({ group_id: g.id, group_name: getGroupName(g) }));
         await saveGroupsToList(toSave);
       } catch (err) {
         logger.warn({ err }, "Falha ao salvar lista de grupos no banco");
@@ -187,7 +219,7 @@ async function main() {
       // 3) Remove task
       let removeSummary: RemoveSummary | undefined;
       if (runRemove && phoneMap) {
-        removeSummary = await removeMembersFromGroups(removalGroups, phoneMap, {
+        removeSummary = await removeMembersFromGroups(managedRemovalGroups, phoneMap, {
           resolveLidToPhone: lidResolver,
           policy: { isInvitedPhone, isSuspendedPhone },
         });
@@ -211,7 +243,7 @@ async function main() {
       try {
         const totalGroupsAll = groups.length + community.length + communityAnnounce.length;
         const notAdminCount = Math.max(0, groups.length - adminGroups.length);
-        const removalGroupsProcessed = runRemove ? removalGroups.length : 0;
+        const removalGroupsProcessed = runRemove ? managedRemovalGroups.length : 0;
         const addQueueLength = await getQueueLength("addQueue");
         const removeQueueLength = await getQueueLength("removeQueue");
 
@@ -220,6 +252,8 @@ async function main() {
           nonCommunityGroups: groups.length,
           adminGroupsProcessed: managedAdminGroups.length,
           removalGroupsProcessed,
+          groupsOutsideNomenclatureForAdd,
+          groupsOutsideNomenclatureForRemoval,
           notAdminCount,
           addSummary,
           removeSummary,
@@ -240,6 +274,22 @@ async function main() {
         logger.info(
           `\x1b[36mTotal de grupos processados para remoção (incluindo comunidade): ${removalGroupsProcessed}\x1b[0m`,
         );
+        logger.info(
+          `\x1b[33mGrupos fora da nomenclatura removidos de adição/scan: ${groupsOutsideNomenclatureForAdd.length}\x1b[0m`,
+        );
+        if (groupsOutsideNomenclatureForAdd.length > 0) {
+          for (const group of groupsOutsideNomenclatureForAdd) {
+            logger.info(`\x1b[33m• ${group.name} (${group.id})\x1b[0m`);
+          }
+        }
+        logger.info(
+          `\x1b[33mGrupos fora da nomenclatura removidos de remoção: ${groupsOutsideNomenclatureForRemoval.length}\x1b[0m`,
+        );
+        if (groupsOutsideNomenclatureForRemoval.length > 0) {
+          for (const group of groupsOutsideNomenclatureForRemoval) {
+            logger.info(`\x1b[33m• ${group.name} (${group.id})\x1b[0m`);
+          }
+        }
         logger.info(`\x1b[31mBot não é admin em: ${notAdminCount} grupos\x1b[0m\n`);
 
         // Members by issue
@@ -260,7 +310,7 @@ async function main() {
             `• Não elegíveis para MB: ${removeSummary.atleast1IneligibleMBCount} membros (${removeSummary.totalIneligibleMBCount} ocorrências totais)`,
           );
           logger.info(
-            `• Não elegíveis para RJB: ${removeSummary.atleast1IneligibleRJBCount} membros (${removeSummary.totalIneligibleRJBCount} ocorrências totais)\x1b[0m\n`,
+            `• Não elegíveis para R. JB: ${removeSummary.atleast1IneligibleRJBCount} membros (${removeSummary.totalIneligibleRJBCount} ocorrências totais)\x1b[0m\n`,
           );
 
           if (removeSummary.removalReasons.length > 0) {
