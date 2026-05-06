@@ -56,8 +56,10 @@ export function checkPhoneNumber(
   let hasActiveMB = false;
   let hasActiveMBFemale = false;
   let hasActiveRJB = false;
+  const activeRJBMemberAges: number[] = [];
   let hasInactiveMB = false;
   let hasInactiveRJB = false;
+  const inactiveRJBMemberAges: number[] = [];
   let hasMemberPhoneWithUnknownAge = false;
   let hasLegalRepPhoneWithUnknownAge = false;
 
@@ -84,10 +86,12 @@ export function checkPhoneNumber(
     }
     if (entry.status === "Active" && entry.is_managed_rjb_eligible && entry.managed_phone_count >= 1) {
       hasActiveRJB = true;
+      if (age !== null) activeRJBMemberAges.push(age);
     }
     if (entry.status === "Inactive" && entry.phone_role === "member" && age !== null && age >= 18) hasInactiveMB = true;
     if (entry.status === "Inactive" && entry.phone_role === "legal_rep" && age !== null && age <= 17) {
       hasInactiveRJB = true;
+      inactiveRJBMemberAges.push(age);
     }
   }
 
@@ -111,8 +115,10 @@ export function checkPhoneNumber(
     has_active_mb: hasActiveMB,
     has_active_mb_female: hasActiveMBFemale,
     has_active_rjb: hasActiveRJB,
+    active_rjb_member_ages: activeRJBMemberAges,
     has_inactive_mb: hasInactiveMB,
     has_inactive_rjb: hasInactiveRJB,
+    inactive_rjb_member_ages: inactiveRJBMemberAges,
     has_member_phone_with_unknown_age: hasMemberPhoneWithUnknownAge,
     has_legal_rep_phone_with_unknown_age: hasLegalRepPhoneWithUnknownAge,
   };

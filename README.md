@@ -94,6 +94,7 @@ O que faz
 - Aplica regras por tipo de grupo e estado do membro para decidir remoção:
   - `MB`: permanece telefone de membro adulto ativo cadastrado em `phones`.
   - `R. JB`: permanece telefone de responsável legal vinculado a membro menor ativo.
+  - `R. JB` com regra específica por grupo: nos grupos `R. JB | 12- Familiares de JBs menores de até 12 anos` e `R. JB | 12+ Familiares dos JB Adolescentes`, o responsável precisa estar vinculado a pelo menos um menor ativo nas faixas 0-12 e 12-17, respectivamente.
   - `status = Inactive`: antes de remover, chama `triggerTwilioOrRemove(phone, "mensa_inactive")` para respeitar período de espera/comunicação.
   - Números não encontrados no DB: idem acima, com razão `"mensa_not_found"`.
   - Ignora números protegidos por `whatsapp_invited_numbers`.
@@ -112,6 +113,8 @@ Regras em detalhes
 - Grupos gerenciados:
   - `MB`: membros adultos ativos permanecem quando o telefone está em `phones`.
   - `R. JB`: responsáveis permanecem quando o telefone está em `legal_representatives.phone`, vinculado a membro de 17 anos ou menos ativo.
+  - `R. JB | 12- Familiares de JBs menores de até 12 anos` (`120363246996906191@g.us`): responsáveis permanecem apenas se vinculados a pelo menos um menor ativo de 0 a 12 anos.
+  - `R. JB | 12+ Familiares dos JB Adolescentes` (`120363418695281706@g.us`): responsáveis permanecem apenas se vinculados a pelo menos um menor ativo de 12 a 17 anos.
   - Telefones de membro menor em `MB` são removidos.
   - Telefones de membro em `R. JB` são removidos quando não também constam como responsável legal.
   - Twilio/espera: `triggerTwilioOrRemove` registra comunicação e pode acionar flow do Twilio Studio. Retorna `true` apenas quando o período de 48 horas terminou, indicando que remoção é segura.

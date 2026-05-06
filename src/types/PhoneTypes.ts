@@ -5,7 +5,7 @@ export interface PhoneNumberStatusRow {
   registration_id: number;
   status: "Active" | "Inactive";
   phone_role: "member" | "legal_rep";
-  member_age_years: number;
+  member_age_years: number | null;
   member_gender: Gender | null;
   managed_phone_count: number;
   is_legal_representative: boolean;
@@ -27,8 +27,10 @@ export interface PhoneCheckResult {
   has_active_mb?: boolean;
   has_active_mb_female?: boolean;
   has_active_rjb?: boolean;
+  active_rjb_member_ages?: number[];
   has_inactive_mb?: boolean;
   has_inactive_rjb?: boolean;
+  inactive_rjb_member_ages?: number[];
   has_member_phone_with_unknown_age?: boolean;
   has_legal_rep_phone_with_unknown_age?: boolean;
 }

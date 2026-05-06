@@ -18,6 +18,11 @@ const EMPTY_REMOVAL_POLICY: RemovalPolicy = {
   isSuspendedPhone: () => false,
 };
 
+const RJB_AGE_SPECIFIC_GROUPS = new Map<string, { min: number; max: number }>([
+  ["120363246996906191@g.us", { min: 0, max: 12 }],
+  ["120363418695281706@g.us", { min: 12, max: 17 }],
+]);
+
 type GroupParticipant = MinimalGroup["participants"][number];
 
 function isParticipantAdmin(participant: GroupParticipant): boolean {
@@ -172,6 +177,7 @@ export async function removeMembersFromGroups(
 
         const evaluation = evaluatePhoneForGroup(checkResult, groupType, {
           requireFemaleMember: isMBWomenGroup(groupName),
+          rjbAgeRange: groupType === "RJB" ? RJB_AGE_SPECIFIC_GROUPS.get(groupId) : undefined,
         });
 
         if (checkResult.found && !evaluation.shouldRemove && !resolvedCommsPhones.has(member)) {

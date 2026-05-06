@@ -112,15 +112,25 @@ O membro precisa estar com o cadastro ATIVO (anuidade paga).
 
 Cada JB pode ter até 2 responsáveis cadastrados e ambos podem participar de grupos R. JB sendo 1 celular por responsável.
 
-## 4 - Consigo tirar dúvidas ou conversar com o zelador?
+## 4 - Regras específicas
+
+Além das regras gerais de permanência em grupos **R. JB**, os grupos abaixo possuem regras específicas baseadas na idade do Jovem Brilhante vinculado ao responsável legal:
+
+- **R. JB | 12+ Familiares dos JB Adolescentes**
+  - Podem permanecer neste grupo apenas responsáveis legais por pelo menos 1 membro menor de idade com idade entre 12 e 17 anos.
+
+- **R. JB | 12- Familiares de JBs menores de até 12 anos**
+  - Podem permanecer neste grupo apenas responsáveis legais por pelo menos 1 membro menor de idade com idade entre 0 e 12 anos.
+
+## 5 - Consigo tirar dúvidas ou conversar com o zelador?
 Não temos uma pessoa designada para responder pelo zelador, o mesmo funciona de forma automática, dúvidas devem ser endereçadas por e-mail à _**secretaria@mensa.org.br**_
 
-## 5 - Fui removido(a) do grupo e não consigo voltar, como faço?
+## 6 - Fui removido(a) do grupo e não consigo voltar, como faço?
 Após ser removido de um grupo, mesmo estando na comunidade, não é possível voltar por conta própria, portanto é preciso regularizar a situação que resultou na remoção, seja inconsistência no cadastro ou anuidade expirada e após regularizar solicitar novamente pela área do membro.
 
 _**IMPORTANTE: Lembre-se que é preciso enviar a mensagem de autorização e adicionar o zelador aos contatos.**_
 
-## 6 - Fui entrar e aparece que o grupo está cheio, e agora?
+## 7 - Fui entrar e aparece que o grupo está cheio, e agora?
 Infelizmente a plataforma WhatsApp possui um limite máximo de 1024 membros por grupo e 2000 membros por comunidade, além de abrigar no máximo 100 grupos por comunidade.
 
 Estamos estudando a melhor forma de contornar estas limitações.

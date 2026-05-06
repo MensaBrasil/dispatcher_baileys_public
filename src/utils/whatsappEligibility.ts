@@ -20,6 +20,11 @@ export type GroupEligibilityResult = {
   waitForGracePeriod: boolean;
 };
 
+export type RjbAgeRange = {
+  min: number;
+  max: number;
+};
+
 export const COMMUNICATION_REASONS = {
   membroInativo: "Membro Inativo",
   membroNaoEncontradoNoBanco: "Membro não encontrado no banco",
@@ -49,10 +54,16 @@ export const REMOVAL_REASONS = {
     "Telefone de responsável legal encontrado para R. JB, mas a data de nascimento/idade do membro vinculado está ausente.",
   inelegivelRjb:
     "Telefone de responsável legal encontrado para R. JB, mas não cumpre simultaneamente: membro vinculado ativo e 17 anos ou menos.",
+  responsavelForaFaixaEtariaRjb:
+    "Responsável legal não está vinculado a menor ativo na faixa etária exigida para este grupo R. JB específico.",
   inelegivelGrupoGerenciado: "Telefone não elegível para grupo gerenciado.",
   suspensoWhatsapp: "Telefone suspenso pela política de WhatsApp (`whatsapp_suspended_numbers`).",
   saiuDoGrupo: "Saiu do grupo.",
 } as const;
+
+function hasAgeInRange(ages: number[] | undefined, range: RjbAgeRange): boolean {
+  return Boolean(ages?.some((age) => age >= range.min && age <= range.max));
+}
 
 export function isEligibleRegistrationForGroup(
   registration: RegistrationEligibility | undefined,
@@ -77,7 +88,7 @@ export function isEligibleRegistrationForGroup(
 export function evaluatePhoneForGroup(
   checkResult: PhoneCheckResult,
   groupType: GroupType,
-  options: { requireFemaleMember?: boolean } = {},
+  options: { requireFemaleMember?: boolean; rjbAgeRange?: RjbAgeRange } = {},
 ): GroupEligibilityResult {
   if (!checkResult.found) {
     return {
@@ -135,6 +146,34 @@ export function evaluatePhoneForGroup(
   }
 
   if (groupType === "RJB") {
+    if (options.rjbAgeRange) {
+      if (checkResult.has_active_rjb && hasAgeInRange(checkResult.active_rjb_member_ages, options.rjbAgeRange)) {
+        return {
+          shouldAdd: true,
+          shouldRemove: false,
+          removalReason: null,
+          waitForGracePeriod: false,
+        };
+      }
+
+      const hasInactiveInRange = hasAgeInRange(checkResult.inactive_rjb_member_ages, options.rjbAgeRange);
+
+      return {
+        shouldAdd: false,
+        shouldRemove: true,
+        removalReason: hasInactiveInRange
+          ? REMOVAL_REASONS.membroInativoRjb
+          : checkResult.has_legal_rep_phone_with_unknown_age
+            ? REMOVAL_REASONS.idadeDesconhecidaRjb
+            : checkResult.has_legal_rep_phone
+              ? REMOVAL_REASONS.responsavelForaFaixaEtariaRjb
+              : checkResult.has_member_phone
+                ? REMOVAL_REASONS.apenasMembroRjb
+                : REMOVAL_REASONS.semTelefoneResponsavelRjb,
+        waitForGracePeriod: hasInactiveInRange,
+      };
+    }
+
     if (checkResult.has_active_rjb) {
       return {
         shouldAdd: true,
