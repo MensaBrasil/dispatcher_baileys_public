@@ -223,7 +223,7 @@ export async function removeMembersFromGroups(
           continue;
         }
 
-        if (groupType === "MB") {
+        if (groupType === "MB" || groupType === "OrgMB") {
           totalIneligibleMBCount += 1;
           uniqueIneligibleMB.add(member);
           continue;

@@ -1,4 +1,4 @@
-export type GroupType = "MB" | "RJB";
+export type GroupType = "MB" | "RJB" | "OrgMB";
 
 export interface DBGroupRequest {
   request_id: number;

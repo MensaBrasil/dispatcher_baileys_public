@@ -55,6 +55,8 @@ export function buildProtectedPhoneMatcherFromList(phoneNumbers: Iterable<string
 function normalizeInvitedGroupType(groupType: WhatsAppInvitedPolicyEntry["group_type"]): GroupType | null {
   if (groupType === "MB") return "MB";
   if (groupType === "R. JB") return "RJB";
+  if (groupType === "OrgMB") return "OrgMB";
+  if (groupType === "TODOS") return null;
   return null;
 }
 

@@ -33,6 +33,7 @@ export type AddSummary = {
 const EMPTY_ADD_POLICY: AddPolicy = {
   suspendedRegistrationIds: new Set<number>(),
   suspendedPhones: [],
+  isInvitedPhone: () => false,
 };
 
 function parseEnvCsvNumberSet(name: string): Set<number> {
@@ -160,6 +161,14 @@ export async function addMembersToGroups(
         if (!managedPhones) {
           managedPhones = await getManagedGroupPhoneNumbers(request.registration_id, groupType);
           managedPhonesByRegistrationAndGroupType.set(managedPhoneCacheKey, managedPhones);
+        }
+
+        if (groupType === "OrgMB" && !managedPhones.some((phone) => policy.isInvitedPhone(phone, groupType))) {
+          logger.info(
+            { registration_id: request.registration_id, groupId, groupName, groupType },
+            "Matrícula sem telefone convidado para OrgMB; pulando solicitação de adição",
+          );
+          continue;
         }
 
         const hasEligibleManagedPhone = managedPhones.some((phone) => {

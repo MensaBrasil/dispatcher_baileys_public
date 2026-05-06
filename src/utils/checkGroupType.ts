@@ -37,12 +37,17 @@ export function isRJBGroup(name: string | undefined | null): boolean {
   return explicitRJBGroupNames.has(normalized) || /^R\.\s?JB\s*\|\s*\S/i.test(normalized);
 }
 
+export function isOrgMBGroup(name: string | undefined | null): boolean {
+  return /^OrgMB\s*\|\s*\S/i.test(normalizeGroupName(name));
+}
+
 export function isManagedGroup(name: string | undefined | null): boolean {
-  return isMBGroup(name) || isRJBGroup(name);
+  return isMBGroup(name) || isRJBGroup(name) || isOrgMBGroup(name);
 }
 
 export async function checkGroupType(groupName: string | undefined | null): Promise<GroupType | null> {
   try {
+    if (isOrgMBGroup(groupName)) return "OrgMB";
     if (isRJBGroup(groupName)) return "RJB";
     if (isMBGroup(groupName)) return "MB";
   } catch {

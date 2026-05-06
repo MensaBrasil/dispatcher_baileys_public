@@ -462,11 +462,16 @@ export async function getActiveWhatsappPolicy(): Promise<ActiveWhatsappPolicy> {
   `;
 
   const [invitedResult, suspendedResult] = await Promise.all([
-    p.query<{ phone_number: string | null; group_type: "MB" | "R. JB" | null }>(invitedQuery),
+    p.query<{ phone_number: string | null; group_type: "MB" | "R. JB" | "TODOS" | "OrgMB" | null }>(
+      invitedQuery,
+    ),
     p.query<{ phone_number: string | null; registration_id: number | null }>(suspendedQuery),
   ]);
 
-  const invitedNumbers = new Map<string, { phone_number: string; group_type: "MB" | "R. JB" | null }>();
+  const invitedNumbers = new Map<
+    string,
+    { phone_number: string; group_type: "MB" | "R. JB" | "TODOS" | "OrgMB" | null }
+  >();
   for (const row of invitedResult.rows) {
     const phone = row.phone_number?.trim();
     if (phone) {
@@ -596,9 +601,9 @@ export async function getMemberPhoneNumbers(registration_id: number): Promise<st
 export async function getManagedGroupPhoneNumbers(registration_id: number, groupType: GroupType): Promise<string[]> {
   const p = getPool();
   const query =
-    groupType === "MB"
-      ? `SELECT phone_number AS phone FROM phones WHERE registration_id = $1`
-      : `SELECT phone AS phone FROM legal_representatives WHERE registration_id = $1`;
+    groupType === "RJB"
+      ? `SELECT phone AS phone FROM legal_representatives WHERE registration_id = $1`
+      : `SELECT phone_number AS phone FROM phones WHERE registration_id = $1`;
 
   const { rows } = await p.query<{ phone: string }>(query, [registration_id]);
   return rows.map((r) => r.phone);

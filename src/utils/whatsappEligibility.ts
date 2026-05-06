@@ -62,7 +62,7 @@ export function isEligibleRegistrationForGroup(
   if (!registration || !groupType) return false;
   if (!registration.isActive) return false;
 
-  if (groupType === "MB") {
+  if (groupType === "MB" || groupType === "OrgMB") {
     if (options.requireFemaleMember && !registration.isFemale) return false;
     return registration.isAdult && registration.hasMemberPhone;
   }
@@ -88,7 +88,7 @@ export function evaluatePhoneForGroup(
     };
   }
 
-  if (groupType === "MB") {
+  if (groupType === "MB" || groupType === "OrgMB") {
     if (options.requireFemaleMember && checkResult.has_active_mb_female) {
       return {
         shouldAdd: true,

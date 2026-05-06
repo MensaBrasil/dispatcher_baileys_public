@@ -236,6 +236,7 @@ async function main() {
         addSummary = await addMembersToGroups(addTaskGroups, {
           suspendedRegistrationIds: new Set(activePolicy.suspendedRegistrationIds),
           suspendedPhones: activePolicy.suspendedPhones,
+          isInvitedPhone,
         });
       }
 
