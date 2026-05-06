@@ -462,9 +462,7 @@ export async function getActiveWhatsappPolicy(): Promise<ActiveWhatsappPolicy> {
   `;
 
   const [invitedResult, suspendedResult] = await Promise.all([
-    p.query<{ phone_number: string | null; group_type: "MB" | "R. JB" | "TODOS" | "OrgMB" | null }>(
-      invitedQuery,
-    ),
+    p.query<{ phone_number: string | null; group_type: "MB" | "R. JB" | "TODOS" | "OrgMB" | null }>(invitedQuery),
     p.query<{ phone_number: string | null; registration_id: number | null }>(suspendedQuery),
   ]);
 
