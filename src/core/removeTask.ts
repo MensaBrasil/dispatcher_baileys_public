@@ -164,7 +164,7 @@ export async function removeMembersFromGroups(
           continue;
         }
 
-        const isInvited = policy.isInvitedPhone(member);
+        const isInvited = policy.isInvitedPhone(member, groupType);
         if (isInvited) {
           invitedInGroupsCount += 1;
           continue;

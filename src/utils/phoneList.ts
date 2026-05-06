@@ -1,3 +1,6 @@
+import type { GroupType } from "../types/DBTypes.js";
+import type { WhatsAppInvitedPolicyEntry } from "../types/PolicyTypes.js";
+
 function toDigits(value: string): string {
   return value.replace(/\D+/g, "");
 }
@@ -46,6 +49,40 @@ export function buildProtectedPhoneMatcherFromList(phoneNumbers: Iterable<string
   return (phone: string): boolean => {
     const lookupKey = normalizeForWhatsappLookup(phone);
     return lookupKey !== null && allowedPhones.has(lookupKey);
+  };
+}
+
+function normalizeInvitedGroupType(groupType: WhatsAppInvitedPolicyEntry["group_type"]): GroupType | null {
+  if (groupType === "MB") return "MB";
+  if (groupType === "R. JB") return "RJB";
+  return null;
+}
+
+export function buildInvitedPhoneMatcher(
+  invitedNumbers: Iterable<WhatsAppInvitedPolicyEntry>,
+): (phone: string, groupType?: GroupType | null) => boolean {
+  const allowedGroupTypesByPhone = new Map<string, Set<GroupType | "*">>();
+
+  for (const entry of invitedNumbers) {
+    const lookupKey = normalizeForWhatsappLookup(toDigits(String(entry.phone_number ?? "").trim()));
+    if (!lookupKey) continue;
+
+    const groupType = normalizeInvitedGroupType(entry.group_type) ?? "*";
+    const allowedGroupTypes = allowedGroupTypesByPhone.get(lookupKey) ?? new Set<GroupType | "*">();
+    allowedGroupTypes.add(groupType);
+    allowedGroupTypesByPhone.set(lookupKey, allowedGroupTypes);
+  }
+
+  return (phone: string, groupType?: GroupType | null): boolean => {
+    const lookupKey = normalizeForWhatsappLookup(phone);
+    if (!lookupKey) return false;
+
+    const allowedGroupTypes = allowedGroupTypesByPhone.get(lookupKey);
+    if (!allowedGroupTypes) return false;
+    if (allowedGroupTypes.has("*")) return true;
+    if (groupType == null) return allowedGroupTypes.size > 0;
+
+    return allowedGroupTypes.has(groupType);
   };
 }
 

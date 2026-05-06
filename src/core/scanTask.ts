@@ -108,7 +108,7 @@ export async function scanGroups(
       }
 
       for (const member of groupMembers) {
-        if (policy.isInvitedPhone(member)) {
+        if (policy.isInvitedPhone(member, groupType)) {
           continue;
         }
         const checkResult = checkPhoneNumber(phoneNumbersFromDB, member);

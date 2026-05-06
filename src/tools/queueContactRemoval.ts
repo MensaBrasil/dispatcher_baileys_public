@@ -16,7 +16,7 @@ import type { BoomError } from "../types/ErrorTypes.js";
 import { processGroupsBaileys } from "../utils/groups.js";
 import { extractPhoneFromParticipant } from "../utils/jid.js";
 import logger, { sanitizeLevel } from "../utils/logger.js";
-import { buildProtectedPhoneMatcherFromList } from "../utils/phoneList.js";
+import { buildInvitedPhoneMatcher } from "../utils/phoneList.js";
 
 configDotenv({ path: ".env" });
 
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const policy = await getActiveWhatsappPolicy();
-  const isInvitedNumber = buildProtectedPhoneMatcherFromList(policy.invitedPhones);
+  const isInvitedNumber = buildInvitedPhoneMatcher(policy.invitedNumbers);
   if (isInvitedNumber(targetPhone)) {
     logger.fatal({ phone: targetPhone }, "Telefone protegido pela política de convidados e não pode ser removido");
     process.exit(1);

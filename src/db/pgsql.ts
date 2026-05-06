@@ -451,7 +451,7 @@ export async function getRegistrationFlags(registrationIds: number[]): Promise<M
 export async function getActiveWhatsappPolicy(): Promise<ActiveWhatsappPolicy> {
   const p = getPool();
   const invitedQuery = `
-    SELECT phone_number
+    SELECT phone_number, group_type
     FROM whatsapp_invited_numbers
     WHERE invited_until IS NULL OR invited_until >= NOW()
   `;
@@ -462,14 +462,19 @@ export async function getActiveWhatsappPolicy(): Promise<ActiveWhatsappPolicy> {
   `;
 
   const [invitedResult, suspendedResult] = await Promise.all([
-    p.query<{ phone_number: string | null }>(invitedQuery),
+    p.query<{ phone_number: string | null; group_type: "MB" | "R. JB" | null }>(invitedQuery),
     p.query<{ phone_number: string | null; registration_id: number | null }>(suspendedQuery),
   ]);
 
-  const invitedPhones = new Set<string>();
+  const invitedNumbers = new Map<string, { phone_number: string; group_type: "MB" | "R. JB" | null }>();
   for (const row of invitedResult.rows) {
     const phone = row.phone_number?.trim();
-    if (phone) invitedPhones.add(phone);
+    if (phone) {
+      invitedNumbers.set(`${phone}:${row.group_type ?? "*"}`, {
+        phone_number: phone,
+        group_type: row.group_type,
+      });
+    }
   }
 
   const suspendedPhones = new Set<string>();
@@ -483,7 +488,7 @@ export async function getActiveWhatsappPolicy(): Promise<ActiveWhatsappPolicy> {
   }
 
   return {
-    invitedPhones: [...invitedPhones],
+    invitedNumbers: [...invitedNumbers.values()],
     suspendedPhones: [...suspendedPhones],
     suspendedRegistrationIds: [...suspendedRegistrationIds],
   };

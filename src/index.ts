@@ -18,7 +18,7 @@ import { processGroupsBaileys } from "./utils/groups.js";
 import type { ResolveLidToPhoneFn } from "./utils/jid.js";
 import logger, { sanitizeLevel } from "./utils/logger.js";
 import { preprocessPhoneNumbers } from "./utils/phoneCheck.js";
-import { buildProtectedPhoneMatcherFromList, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
+import { buildInvitedPhoneMatcher, buildSuspendedPhoneMatcherFromList } from "./utils/phoneList.js";
 
 configDotenv({ path: ".env" });
 
@@ -194,7 +194,7 @@ async function main() {
       }
 
       const activePolicy = await getActiveWhatsappPolicy();
-      const isInvitedPhone = buildProtectedPhoneMatcherFromList(activePolicy.invitedPhones);
+      const isInvitedPhone = buildInvitedPhoneMatcher(activePolicy.invitedNumbers);
       const isSuspendedPhone = buildSuspendedPhoneMatcherFromList(activePolicy.suspendedPhones);
 
       // 1) Build phone map if needed for scan/remove
@@ -258,7 +258,7 @@ async function main() {
           addSummary,
           removeSummary,
           policyCounts: {
-            invitedPhones: activePolicy.invitedPhones.length,
+            invitedPhones: activePolicy.invitedNumbers.length,
             suspendedPhones: activePolicy.suspendedPhones.length,
             suspendedRegistrationIds: activePolicy.suspendedRegistrationIds.length,
           },
@@ -350,14 +350,14 @@ async function main() {
         logger.info("\x1b[1mNúmeros especiais:\x1b[0m");
         if (removeSummary) {
           logger.info(
-            `\x1b[35m• Lista de convidados: ${activePolicy.invitedPhones.length} números (${removeSummary.invitedInGroupsCount} ocorrências totais)`,
+            `\x1b[35m• Lista de convidados: ${activePolicy.invitedNumbers.length} números (${removeSummary.invitedInGroupsCount} ocorrências totais)`,
           );
           logger.info(
             `• Lista de suspensos: ${activePolicy.suspendedPhones.length} números (${removeSummary.suspendedInGroupsCount} ocorrências totais)\x1b[0m\n`,
           );
         } else {
           logger.info(
-            `\x1b[35m• Lista de convidados: ${activePolicy.invitedPhones.length} números (0 ocorrências totais)`,
+            `\x1b[35m• Lista de convidados: ${activePolicy.invitedNumbers.length} números (0 ocorrências totais)`,
           );
           logger.info(
             `• Lista de suspensos: ${activePolicy.suspendedPhones.length} números (0 ocorrências totais)\x1b[0m\n`,
